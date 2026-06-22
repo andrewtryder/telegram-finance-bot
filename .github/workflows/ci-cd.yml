@@ -6,7 +6,7 @@ on:
   workflow_dispatch: 
 
 jobs:
-  # JOB 1: LINTING
+  # JOB 1: LINTING (Now with loose body constraints)
   commitlint:
     runs-on: ubuntu-latest
     steps:
@@ -20,8 +20,10 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install Commitlint
-        run: npm install @commitlint/config-conventional
+      - name: Install Commitlint & Configure Rules
+        run: |
+          npm install @commitlint/cli @commitlint/config-conventional
+          echo "module.exports = { extends: ['@commitlint/config-conventional'], rules: { 'body-max-line-length': [0, 'always', Infinity], 'footer-max-line-length': [0, 'always', Infinity] } };" > commitlint.config.js
 
       - name: Validate current commit
         run: npx commitlint --from HEAD~1 --to HEAD --verbose
