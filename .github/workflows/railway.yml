@@ -1,0 +1,26 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches:
+      - main
+  # Optional: Allows you to trigger the deployment manually from the GitHub UI
+  workflow_dispatch: 
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Optional but recommended: Only deploy if the commit linting passes
+    # needs: [commitlint] 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy via Railway CLI
+        run: railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
