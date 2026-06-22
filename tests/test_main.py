@@ -1,14 +1,13 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from telegram import Update, User, Message, Chat
+from telegram import Update, User, Message, Chat, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 import main
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    main.API_CACHE.clear()
-
-
+    if hasattr(main, 'API_CACHE'):
+        main.API_CACHE.clear()
 
 @pytest.fixture
 def mock_update():
@@ -17,12 +16,16 @@ def mock_update():
     update.effective_user.first_name = "TestUser"
     update.message = AsyncMock(spec=Message)
     update.message.reply_text = AsyncMock()
+    update.effective_chat = MagicMock(spec=Chat)
+    update.effective_chat.id = 12345
     return update
 
 @pytest.fixture
 def mock_context():
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.args = []
+    context.bot = MagicMock()
+    context.bot.send_chat_action = AsyncMock()
     return context
 
 @pytest.mark.asyncio
@@ -76,9 +79,9 @@ async def test_get_quote_formatted_no_api_key():
 
 @pytest.mark.asyncio
 @patch('main.get_quote_formatted', new_callable=AsyncMock)
-async def test_stock_command_with_args(mock_get_price, mock_update, mock_context):
+async def test_stock_command_with_args(mock_get_quote, mock_update, mock_context):
     mock_context.args = ['AAPL']
-    mock_get_price.return_value = "The current price of AAPL is $150.5"
+    mock_get_quote.return_value = "The current price of AAPL is $150.5"
 
     await main.stock(mock_update, mock_context)
 
@@ -95,9 +98,9 @@ async def test_stock_command_without_args(mock_update, mock_context):
 
 @pytest.mark.asyncio
 @patch('main.get_quote_formatted', new_callable=AsyncMock)
-async def test_crypto_command_with_args_no_usd(mock_get_price, mock_update, mock_context):
+async def test_crypto_command_with_args_no_usd(mock_get_quote, mock_update, mock_context):
     mock_context.args = ['BTC']
-    mock_get_price.return_value = "The current price of BTC/USD is $50000.0"
+    mock_get_quote.return_value = "The current price of BTC/USD is $50000.0"
 
     await main.crypto(mock_update, mock_context)
 
