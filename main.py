@@ -103,16 +103,16 @@ async def get_quote_formatted(symbol: str) -> str:
 
         if "status" in data and data["status"] == "error":
             return f"Error from TwelveData: {data.get('message', 'Unknown error')}"
-            
+
         if "close" in data:
             name = data.get("name", symbol.upper())
             price = float(data["close"])
             change = float(data.get("change", 0))
             pct_change = float(data.get("percent_change", 0))
             time_reported = data.get("datetime", "Unknown time")
-            
+
             sign = "+" if change >= 0 else ""
-            
+
             return (
                 f"📈 **{name} ({symbol.upper()})**\n"
                 f"Price: ${price:,.2f}\n"
@@ -175,7 +175,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Debug logging
         logger.info(f"Raw Search API Response for '{query}': {data}")
-        
+
         if "data" in data and len(data["data"]) > 0:
             results = data["data"][:5] # Limit to Top 5 results
             text = f"🔍 **Search results for '{query}':**\n\n"
@@ -210,7 +210,7 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         data = await fetch_with_cache(url)
-        
+
         logger.info(f"Raw Indices (ETF) API Response: {data}")
 
         # Map the ETF symbols to readable names
