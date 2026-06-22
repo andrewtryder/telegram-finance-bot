@@ -8,10 +8,13 @@ on:
   workflow_dispatch: 
 
 jobs:
-  # JOB 1: LINT PR TITLE (Only runs when a PR is open or updated)
+  # JOB 1: LINT PR TITLE (Now with explicit security clearance)
   pr-lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      statuses: write
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         env:
