@@ -3,34 +3,33 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch: 
 
 jobs:
-  # JOB 1: LINTING (Now with loose body constraints)
-  commitlint:
+  # JOB 1: LINT PR TITLE (Only runs when a PR is open or updated)
+  pr-lint:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v5
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          fetch-depth: 0 
+          types: |
+            feat
+            fix
+            chore
+            docs
+            style
+            refactor
+            test
+            ci
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-
-      - name: Install Commitlint & Configure Rules
-        run: |
-          npm install @commitlint/cli @commitlint/config-conventional
-          echo "module.exports = { extends: ['@commitlint/config-conventional'], rules: { 'body-max-line-length': [0, 'always', Infinity], 'footer-max-line-length': [0, 'always', Infinity] } };" > commitlint.config.js
-
-      - name: Validate current commit
-        run: npx commitlint --from HEAD~1 --to HEAD --verbose
-
-  # JOB 2: DEPLOYMENT (Waits for Job 1)
+  # JOB 2: DEPLOYMENT (Only runs on direct pushes or completed merges to main)
   deploy:
-    needs: commitlint
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     
     steps:
