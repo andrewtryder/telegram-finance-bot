@@ -1,6 +1,8 @@
 import os
 import logging
-import requests
+import httpx
+import time
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -16,9 +18,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # Constants
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
+
+# API Cache (URL -> (timestamp, data))
+API_CACHE = {}
+CACHE_TTL = 600  # 10 minutes
+
+async def fetch_with_cache(url: str) -> dict:
+    """Fetch URL with a 10-minute in-memory cache using async httpx."""
+    current_time = time.time()
+
+    # Check cache
+    if url in API_CACHE:
+        timestamp, data = API_CACHE[url]
+        if current_time - timestamp < CACHE_TTL:
+            logger.info(f"⚡ Cache HIT for URL: {url.split('?')[0]} (params hidden)")
+            return data
+
+    # Cache MISS - fetch async
+    logger.info(f"🐢 Cache MISS for URL: {url.split('?')[0]} - fetching from API")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        # Save to cache
+        API_CACHE[url] = (current_time, data)
+        return data
+
 
 def get_help_text(first_name: str = "there") -> str:
     """Returns the standard help/welcome message."""
@@ -42,16 +72,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /help")
     await update.message.reply_text(get_help_text(update.effective_user.first_name), parse_mode='Markdown')
 
-def get_quote_formatted(symbol: str) -> str:
+async def get_quote_formatted(symbol: str) -> str:
     """Helper function to get detailed quote data from TwelveData API."""
     if not TWELVEDATA_API_KEY:
         return "Error: Twelve Data API Key is not configured."
 
     url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={TWELVEDATA_API_KEY}"
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        data = await fetch_with_cache(url)
         
         # Log the raw data to the terminal for debugging
         logger.info(f"Raw Quote API Response for {symbol}: {data}")
@@ -91,7 +119,7 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     ticker = context.args[0]
-    result = get_quote_formatted(ticker)
+    result = await get_quote_formatted(ticker)
     await update.message.reply_text(result, parse_mode='Markdown')
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,7 +135,7 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if '/' not in symbol:
         symbol = f"{symbol}/USD"
 
-    result = get_quote_formatted(symbol)
+    result = await get_quote_formatted(symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,9 +151,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = f"https://api.twelvedata.com/symbol_search?symbol={query}&apikey={TWELVEDATA_API_KEY}"
     
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        data = await fetch_with_cache(url)
         
         # Debug logging
         logger.info(f"Raw Search API Response for '{query}': {data}")
@@ -162,9 +188,7 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response_text = "📊 **Major Market Proxies (ETFs)**\n\n"
     
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+        data = await fetch_with_cache(url)
         
         logger.info(f"Raw Indices (ETF) API Response: {data}")
 
