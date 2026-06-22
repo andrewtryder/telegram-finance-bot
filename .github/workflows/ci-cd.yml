@@ -1,0 +1,49 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: 
+
+jobs:
+  # JOB 1: LINTING
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Commitlint
+        run: npm install @commitlint/config-conventional
+
+      - name: Validate current commit
+        run: npx commitlint --from HEAD~1 --to HEAD --verbose
+
+  # JOB 2: DEPLOYMENT (Waits for Job 1)
+  deploy:
+    needs: commitlint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Sync GitHub Secrets to Railway
+        run: railway variables set TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" TWELVEDATA_API_KEY="${{ secrets.TWELVEDATA_API_KEY }}" ALLOWED_CHAT_IDS="${{ secrets.ALLOWED_CHAT_IDS }}" --service "triumphant-enthusiasm"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy via Railway CLI
+        run: railway up --detach --service "triumphant-enthusiasm"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
