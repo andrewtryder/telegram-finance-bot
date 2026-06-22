@@ -3,14 +3,15 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
-  pull_request:
+  pull_request_target:
+    types: [opened, edited, synchronize]
     branches: [ main ]
   workflow_dispatch: 
 
 jobs:
-  # JOB 1: LINT PR TITLE
+  # JOB 1: LINT PR TITLE (Runs securely from main branch context)
   pr-lint:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +32,7 @@ jobs:
             test
             ci
 
-  # JOB 2: DEPLOYMENT
+  # JOB 2: DEPLOYMENT (Only runs on direct pushes or completed merges to main)
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
