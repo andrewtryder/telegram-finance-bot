@@ -10,6 +10,17 @@ A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo 
 - `/indices` - Fetches current levels of major market indices (S&P 500, Dow Jones, Nasdaq Composite).
 - `/search <query>` - Search for a symbol via Twelve Data (e.g., `/search Apple`).
 
+In private chats, `/start` and `/help` show a reply keyboard with quick command buttons. In groups, commands are available via Telegram's native `/` menu (registered on bot startup).
+
+## Group Chats
+
+This bot is designed for command-only use in groups:
+
+- **Command menu:** On startup the bot registers `/` commands via `setMyCommands` — use the menu button next to the message field in any group.
+- **Privacy mode (recommended):** In [@BotFather](https://t.me/BotFather), send `/setprivacy`, select your bot, and choose **Enable**. The bot will only receive messages that start with `/`, @mention the bot, or reply to the bot. This is enabled by default for new bots.
+- **No reply keyboard in groups:** `/start` and `/help` omit the persistent keyboard in groups and supergroups to avoid cluttering shared chats.
+- **Code-level filter:** Non-command messages in groups are ignored as a fallback if privacy mode is disabled in BotFather.
+
 ## Prerequisites
 
 To run this bot locally or in production, you will need:
