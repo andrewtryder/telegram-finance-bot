@@ -1,23 +1,25 @@
 # Telegram Financial Bot
 
-A basic Telegram bot that fetches current stock and cryptocurrency prices using the Twelve Data API.
+A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo Finance), with symbol search powered by the Twelve Data API.
 
 ## Features
 
 - `/start` - Displays a welcome message and lists available commands.
 - `/stock <ticker>` - Fetches the current price of a given stock (e.g., `/stock AAPL`).
-- `/crypto <symbol>` - Fetches the current price of a cryptocurrency (e.g., `/crypto BTC/USD` or `/crypto ETH`).
+- `/crypto <symbol>` - Fetches the current price of a cryptocurrency (e.g., `/crypto BTC` or `/crypto ETH`).
+- `/indices` - Fetches current levels of major market indices (S&P 500, Dow Jones, Nasdaq Composite).
+- `/search <query>` - Search for a symbol via Twelve Data (e.g., `/search Apple`).
 
 ## Prerequisites
 
-To run this bot locally or in production, you will need two pieces of information:
+To run this bot locally or in production, you will need:
 
 1. **Telegram Bot Token**:
    - Go to Telegram and search for the `@BotFather` bot.
    - Send `/newbot` and follow the instructions to create a new bot.
    - Copy the API token provided at the end.
 
-2. **Twelve Data API Key**:
+2. **Twelve Data API Key** (required for `/search` only):
    - Go to [Twelve Data](https://twelvedata.com/) and sign up for a free account.
    - Navigate to your dashboard to find your API key.
 
@@ -62,5 +64,5 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
 3. In the Railway dashboard, go to the **Variables** section of your new service.
 4. Add the following environment variables (which you also put into GitHub Secrets):
    - `TELEGRAM_BOT_TOKEN`
-   - `TWELVEDATA_API_KEY`
+   - `TWELVEDATA_API_KEY` (for `/search` only)
 5. Railway will automatically build and deploy your bot.

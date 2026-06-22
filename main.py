@@ -3,10 +3,13 @@ import logging
 import httpx
 import time
 import asyncio
+from datetime import datetime, timezone
 from dotenv import load_dotenv
+import yfinance as yf
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from symbols import to_yfinance_stock, to_yfinance_crypto, crypto_display_symbol
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +29,45 @@ TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
 
 # API Cache (URL -> (timestamp, data))
 API_CACHE = {}
+# Quote cache (yfinance symbol -> (timestamp, info dict))
+QUOTE_CACHE = {}
 CACHE_TTL = 600  # 10 minutes
+
+INDEX_MAPPING = {
+    "^GSPC": "S&P 500",
+    "^DJI": "Dow Jones",
+    "^IXIC": "Nasdaq Composite",
+}
+
+
+def _fetch_yfinance_info(yfinance_symbol: str) -> dict:
+    ticker = yf.Ticker(yfinance_symbol)
+    info = ticker.info
+    logger.info(f"Raw yfinance info for {yfinance_symbol}: {info}")
+    return info
+
+
+async def _get_yfinance_info(yfinance_symbol: str) -> dict:
+    current_time = time.time()
+
+    if yfinance_symbol in QUOTE_CACHE:
+        timestamp, data = QUOTE_CACHE[yfinance_symbol]
+        if current_time - timestamp < CACHE_TTL:
+            logger.info(f"⚡ Cache HIT for symbol: {yfinance_symbol}")
+            return data
+
+    logger.info(f"🐢 Cache MISS for symbol: {yfinance_symbol} - fetching from yfinance")
+    info = await asyncio.to_thread(_fetch_yfinance_info, yfinance_symbol)
+    QUOTE_CACHE[yfinance_symbol] = (current_time, info)
+    return info
+
+
+def _format_market_time(info: dict) -> str:
+    market_time = info.get("regularMarketTime")
+    if market_time:
+        return datetime.fromtimestamp(market_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return "Unknown time"
+
 
 async def fetch_with_cache(url: str) -> dict:
     """Fetch URL with a 10-minute in-memory cache using async httpx."""
@@ -89,41 +130,34 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_reply_keyboard()
     )
 
-async def get_quote_formatted(symbol: str) -> str:
-    """Helper function to get detailed quote data from TwelveData API."""
-    if not TWELVEDATA_API_KEY:
-        return "Error: Twelve Data API Key is not configured."
+async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None) -> str:
+    """Helper function to get detailed quote data from yfinance."""
+    if display_symbol is None:
+        display_symbol = yfinance_symbol.upper()
 
-    url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={TWELVEDATA_API_KEY}"
     try:
-        data = await fetch_with_cache(url)
-        
-        # Log the raw data to the terminal for debugging
-        logger.info(f"Raw Quote API Response for {symbol}: {data}")
+        info = await _get_yfinance_info(yfinance_symbol)
 
-        if "status" in data and data["status"] == "error":
-            return f"Error from TwelveData: {data.get('message', 'Unknown error')}"
+        price = info.get("regularMarketPrice")
+        if price is None:
+            return f"Could not find quote data for {display_symbol}"
 
-        if "close" in data:
-            name = data.get("name", symbol.upper())
-            price = float(data["close"])
-            change = float(data.get("change", 0))
-            pct_change = float(data.get("percent_change", 0))
-            time_reported = data.get("datetime", "Unknown time")
+        name = info.get("shortName") or info.get("longName") or display_symbol
+        change = float(info.get("regularMarketChange") or 0)
+        pct_change = float(info.get("regularMarketChangePercent") or 0)
+        time_reported = _format_market_time(info)
 
-            sign = "+" if change >= 0 else ""
+        sign = "+" if change >= 0 else ""
 
-            return (
-                f"📈 **{name} ({symbol.upper()})**\n"
-                f"Price: ${price:,.2f}\n"
-                f"Change: {sign}{change:,.2f} ({sign}{pct_change:.2f}%)\n"
-                f"🕒 Last reported: {time_reported}"
-            )
-        else:
-            return f"Could not find quote data for {symbol.upper()}"
+        return (
+            f"📈 **{name} ({display_symbol})**\n"
+            f"Price: ${price:,.2f}\n"
+            f"Change: {sign}{change:,.2f} ({sign}{pct_change:.2f}%)\n"
+            f"🕒 Last reported: {time_reported}"
+        )
 
     except Exception as e:
-        logger.error(f"Network/Code Error fetching data for {symbol}: {e}")
+        logger.error(f"Network/Code Error fetching data for {yfinance_symbol}: {e}")
         return "Sorry, I couldn't fetch the data right now. Please try again later."
 
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,7 +171,8 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     ticker = context.args[0]
-    result = await get_quote_formatted(ticker)
+    yfinance_symbol = to_yfinance_stock(ticker)
+    result = await get_quote_formatted(yfinance_symbol, yfinance_symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,10 +186,9 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     symbol = context.args[0]
-    if '/' not in symbol:
-        symbol = f"{symbol}/USD"
-
-    result = await get_quote_formatted(symbol)
+    yfinance_symbol = to_yfinance_crypto(symbol)
+    display_symbol = crypto_display_symbol(symbol)
+    result = await get_quote_formatted(yfinance_symbol, display_symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,6 +199,10 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not context.args:
         await update.message.reply_text("Please provide a search term. Example: `/search Vanguard`", parse_mode='Markdown')
+        return
+
+    if not TWELVEDATA_API_KEY:
+        await update.message.reply_text("Error: Twelve Data API Key is not configured.")
         return
 
     query = " ".join(context.args)
@@ -193,46 +231,34 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, the search function is currently unavailable.")
 
 async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get the current price of major indices using their ETF equivalents."""
+    """Get the current levels of major market indices."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    
-    if not TWELVEDATA_API_KEY:
-        await update.message.reply_text("Error: Twelve Data API Key is not configured.")
-        return
 
-    # Using ETF equivalents which are allowed on the free tier
-    symbols = "SPY,DIA,QQQ"
-    url = f"https://api.twelvedata.com/quote?symbol={symbols}&apikey={TWELVEDATA_API_KEY}"
-    
-    response_text = "📊 **Major Market Proxies (ETFs)**\n\n"
-    
+    response_text = "📊 **Major Market Indices**\n\n"
+
     try:
-        data = await fetch_with_cache(url)
+        fetch_tasks = [
+            _get_yfinance_info(symbol) for symbol in INDEX_MAPPING
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
-        logger.info(f"Raw Indices (ETF) API Response: {data}")
-
-        # Map the ETF symbols to readable names
-        etf_mapping = {
-            "SPY": "S&P 500 (SPY)",
-            "DIA": "Dow Jones (DIA)",
-            "QQQ": "Nasdaq 100 (QQQ)"
-        }
-
-        for symbol, readable_name in etf_mapping.items():
-            item = data.get(symbol, {})
-            
-            if "status" in item and item["status"] == "error":
-                response_text += f"• **{readable_name}**: Error ({item.get('message', 'Unknown')})\n"
-            elif "close" in item:
-                price = float(item["close"])
-                pct_change = float(item.get("percent_change", 0))
-                sign = "+" if pct_change >= 0 else ""
-                response_text += f"• **{readable_name}**: ${price:,.2f} ({sign}{pct_change:.2f}%)\n"
-            else:
+        for (symbol, readable_name), info in zip(INDEX_MAPPING.items(), results):
+            if isinstance(info, Exception):
+                logger.error(f"Error fetching index {symbol}: {info}")
                 response_text += f"• **{readable_name}**: Data unavailable\n"
-                
+                continue
+
+            price = info.get("regularMarketPrice")
+            if price is None:
+                response_text += f"• **{readable_name}**: Data unavailable\n"
+                continue
+
+            pct_change = float(info.get("regularMarketChangePercent") or 0)
+            sign = "+" if pct_change >= 0 else ""
+            response_text += f"• **{readable_name}**: {price:,.2f} ({sign}{pct_change:.2f}%)\n"
+
     except Exception as e:
         logger.error(f"Error fetching indices: {e}")
         response_text = "Sorry, I couldn't fetch the indices right now."
