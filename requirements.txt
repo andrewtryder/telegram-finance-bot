@@ -2,3 +2,4 @@ python-telegram-bot>=21.0.0
 python-dotenv
 twelvedata
 httpx
+yfinance

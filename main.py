@@ -3,6 +3,7 @@ import logging
 import httpx
 import time
 import asyncio
+import yfinance as yf
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.constants import ChatAction
@@ -11,8 +12,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # Load environment variables
 load_dotenv()
 
-# Configure logging (Set to INFO, but we manually log all critical actions)
-# If you want to see deep library debug data, change logging.INFO to logging.DEBUG
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -89,41 +89,36 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_reply_keyboard()
     )
 
+def _get_yf_info(symbol: str):
+    """Synchronous helper to fetch yfinance data."""
+    ticker = yf.Ticker(symbol)
+    return ticker.info
+
 async def get_quote_formatted(symbol: str) -> str:
-    """Helper function to get detailed quote data from TwelveData API."""
-    if not TWELVEDATA_API_KEY:
-        return "Error: Twelve Data API Key is not configured."
-
-    url = f"https://api.twelvedata.com/quote?symbol={symbol}&apikey={TWELVEDATA_API_KEY}"
+    """Helper function to get detailed quote data from yfinance."""
     try:
-        data = await fetch_with_cache(url)
+        # yfinance is synchronous, so we run it in a thread to avoid blocking the event loop
+        info = await asyncio.to_thread(_get_yf_info, symbol)
         
-        # Log the raw data to the terminal for debugging
-        logger.info(f"Raw Quote API Response for {symbol}: {data}")
-
-        if "status" in data and data["status"] == "error":
-            return f"Error from TwelveData: {data.get('message', 'Unknown error')}"
-            
-        if "close" in data:
-            name = data.get("name", symbol.upper())
-            price = float(data["close"])
-            change = float(data.get("change", 0))
-            pct_change = float(data.get("percent_change", 0))
-            time_reported = data.get("datetime", "Unknown time")
-            
-            sign = "+" if change >= 0 else ""
-            
-            return (
-                f"📈 **{name} ({symbol.upper()})**\n"
-                f"Price: ${price:,.2f}\n"
-                f"Change: {sign}{change:,.2f} ({sign}{pct_change:.2f}%)\n"
-                f"🕒 Last reported: {time_reported}"
-            )
-        else:
+        if not info or 'regularMarketPrice' not in info:
             return f"Could not find quote data for {symbol.upper()}"
 
+        name = info.get("shortName") or info.get("longName") or symbol.upper()
+        price = info.get("regularMarketPrice")
+        change = info.get("regularMarketChange", 0)
+        pct_change = info.get("regularMarketChangePercent", 0)
+        currency = info.get("currency", "USD")
+
+        sign = "+" if change >= 0 else ""
+
+        return (
+            f"📈 **{name} ({symbol.upper()})**\n"
+            f"Price: {price:,.2f} {currency}\n"
+            f"Change: {sign}{change:,.2f} ({sign}{pct_change:.2f}%)"
+        )
+
     except Exception as e:
-        logger.error(f"Network/Code Error fetching data for {symbol}: {e}")
+        logger.error(f"Error fetching data for {symbol}: {e}")
         return "Sorry, I couldn't fetch the data right now. Please try again later."
 
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,15 +145,20 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please provide a crypto symbol. Example: `/crypto BTC`", parse_mode='Markdown')
         return
 
-    symbol = context.args[0]
-    if '/' not in symbol:
-        symbol = f"{symbol}/USD"
+    symbol = context.args[0].upper()
+
+    # Convert TwelveData style or plain symbols to yfinance style
+    # yfinance uses DASH for crypto pairs, e.g., BTC-USD
+    if '/' in symbol:
+        symbol = symbol.replace('/', '-')
+    elif '-' not in symbol:
+        symbol = f"{symbol}-USD"
 
     result = await get_quote_formatted(symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Search for a stock, crypto, or ETF symbol."""
+    """Search for a stock, crypto, or ETF symbol using TwelveData."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -167,14 +167,15 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please provide a search term. Example: `/search Vanguard`", parse_mode='Markdown')
         return
 
+    if not TWELVEDATA_API_KEY:
+        await update.message.reply_text("Error: Twelve Data API Key is not configured for search.", parse_mode='Markdown')
+        return
+
     query = " ".join(context.args)
     url = f"https://api.twelvedata.com/symbol_search?symbol={query}&apikey={TWELVEDATA_API_KEY}"
     
     try:
         data = await fetch_with_cache(url)
-        
-        # Debug logging
-        logger.info(f"Raw Search API Response for '{query}': {data}")
         
         if "data" in data and len(data["data"]) > 0:
             results = data["data"][:5] # Limit to Top 5 results
@@ -193,43 +194,29 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, the search function is currently unavailable.")
 
 async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get the current price of major indices using their ETF equivalents."""
+    """Get the current price of major indices using yfinance."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
-    if not TWELVEDATA_API_KEY:
-        await update.message.reply_text("Error: Twelve Data API Key is not configured.")
-        return
-
-    # Using ETF equivalents which are allowed on the free tier
-    symbols = "SPY,DIA,QQQ"
-    url = f"https://api.twelvedata.com/quote?symbol={symbols}&apikey={TWELVEDATA_API_KEY}"
+    # Real index symbols for yfinance
+    index_mapping = {
+        "^GSPC": "S&P 500",
+        "^DJI": "Dow Jones Industrial Average",
+        "^IXIC": "Nasdaq Composite"
+    }
     
-    response_text = "📊 **Major Market Proxies (ETFs)**\n\n"
+    response_text = "📊 **Major Market Indices**\n\n"
     
     try:
-        data = await fetch_with_cache(url)
-        
-        logger.info(f"Raw Indices (ETF) API Response: {data}")
-
-        # Map the ETF symbols to readable names
-        etf_mapping = {
-            "SPY": "S&P 500 (SPY)",
-            "DIA": "Dow Jones (DIA)",
-            "QQQ": "Nasdaq 100 (QQQ)"
-        }
-
-        for symbol, readable_name in etf_mapping.items():
-            item = data.get(symbol, {})
+        for symbol, readable_name in index_mapping.items():
+            info = await asyncio.to_thread(_get_yf_info, symbol)
             
-            if "status" in item and item["status"] == "error":
-                response_text += f"• **{readable_name}**: Error ({item.get('message', 'Unknown')})\n"
-            elif "close" in item:
-                price = float(item["close"])
-                pct_change = float(item.get("percent_change", 0))
+            if info and 'regularMarketPrice' in info:
+                price = info["regularMarketPrice"]
+                pct_change = info.get("regularMarketChangePercent", 0)
                 sign = "+" if pct_change >= 0 else ""
-                response_text += f"• **{readable_name}**: ${price:,.2f} ({sign}{pct_change:.2f}%)\n"
+                response_text += f"• **{readable_name}**: {price:,.2f} ({sign}{pct_change:.2f}%)\n"
             else:
                 response_text += f"• **{readable_name}**: Data unavailable\n"
                 
