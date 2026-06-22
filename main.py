@@ -6,9 +6,23 @@ import asyncio
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import yfinance as yf
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.constants import ChatAction
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeAllGroupChats,
+)
+from telegram.constants import ChatAction, ChatType
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 from symbols import to_yfinance_stock, to_yfinance_crypto, crypto_display_symbol
 
 # Load environment variables
@@ -38,6 +52,26 @@ INDEX_MAPPING = {
     "^DJI": "Dow Jones",
     "^IXIC": "Nasdaq Composite",
 }
+
+BOT_COMMANDS = [
+    BotCommand("start", "Show welcome message"),
+    BotCommand("stock", "Get a stock price (e.g. /stock AAPL)"),
+    BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
+    BotCommand("search", "Search for a symbol"),
+    BotCommand("indices", "Major market index levels"),
+    BotCommand("help", "Show available commands"),
+]
+
+GROUP_COMMANDS = [
+    BotCommand("stock", "Get a stock price (e.g. /stock AAPL)"),
+    BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
+    BotCommand("search", "Search for a symbol"),
+    BotCommand("indices", "Major market index levels"),
+    BotCommand("help", "Show available commands"),
+]
+
+# Ignore non-command messages in groups (defense-in-depth alongside BotFather privacy mode).
+GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL
 
 
 def _fetch_yfinance_info(yfinance_symbol: str) -> dict:
@@ -112,13 +146,37 @@ def get_reply_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
+
+def get_reply_markup_for_chat(chat_type: str):
+    if chat_type == ChatType.PRIVATE:
+        return get_reply_keyboard()
+    return None
+
+
+async def setup_commands(application: Application) -> None:
+    bot = application.bot
+    await bot.set_my_commands(BOT_COMMANDS, scope=BotCommandScopeAllPrivateChats())
+    await bot.set_my_commands(GROUP_COMMANDS, scope=BotCommandScopeAllGroupChats())
+    logger.info("Registered bot command menu for private and group chats")
+
+
+async def _ignore_non_command_group_messages(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Drop non-command group messages when privacy mode is disabled in BotFather."""
+    logger.debug(
+        "Ignored non-command message in group chat %s",
+        update.effective_chat.id,
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /start")
     await update.message.reply_text(
         get_help_text(update.effective_user.first_name),
         parse_mode='Markdown',
-        reply_markup=get_reply_keyboard()
+        reply_markup=get_reply_markup_for_chat(update.effective_chat.type)
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,7 +185,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         get_help_text(update.effective_user.first_name),
         parse_mode='Markdown',
-        reply_markup=get_reply_keyboard()
+        reply_markup=get_reply_markup_for_chat(update.effective_chat.type)
     )
 
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None) -> str:
@@ -271,7 +329,12 @@ def main():
         logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
         return
 
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(setup_commands)
+        .build()
+    )
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
@@ -282,6 +345,12 @@ def main():
     
     # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))
+
+    # Groups: only respond to /commands (matches BotFather privacy mode behavior).
+    application.add_handler(
+        MessageHandler(GROUP_PRIVACY_FILTER, _ignore_non_command_group_messages),
+        group=1,
+    )
 
     logger.info("Starting bot... Waiting for commands.")
     application.run_polling()

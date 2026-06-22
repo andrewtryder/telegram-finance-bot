@@ -1,7 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from telegram import Update, User, Message, Chat, ReplyKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
+from telegram.constants import ChatType
+from telegram.ext import ContextTypes, Application
 import main
 
 @pytest.fixture(autouse=True)
@@ -20,6 +22,7 @@ def mock_update():
     update.message.reply_text = AsyncMock()
     update.effective_chat = MagicMock(spec=Chat)
     update.effective_chat.id = 12345
+    update.effective_chat.type = ChatType.PRIVATE
     return update
 
 @pytest.fixture
@@ -37,6 +40,61 @@ async def test_start_command(mock_update, mock_context):
     args, kwargs = mock_update.message.reply_text.call_args
     assert "Hi TestUser!" in args[0]
     assert "/stock" in args[0]
+    assert isinstance(kwargs["reply_markup"], ReplyKeyboardMarkup)
+
+
+@pytest.mark.asyncio
+async def test_start_command_group_no_keyboard(mock_update, mock_context):
+    mock_update.effective_chat.type = ChatType.GROUP
+
+    await main.start(mock_update, mock_context)
+
+    _, kwargs = mock_update.message.reply_text.call_args
+    assert kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_help_command_group_no_keyboard(mock_update, mock_context):
+    mock_update.effective_chat.type = ChatType.SUPERGROUP
+
+    await main.help_command(mock_update, mock_context)
+
+    _, kwargs = mock_update.message.reply_text.call_args
+    assert kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_setup_commands():
+    application = MagicMock(spec=Application)
+    application.bot = MagicMock()
+    application.bot.set_my_commands = AsyncMock()
+
+    await main.setup_commands(application)
+
+    assert application.bot.set_my_commands.call_count == 2
+    private_call, group_call = application.bot.set_my_commands.call_args_list
+    assert private_call.args[0] == main.BOT_COMMANDS
+    assert isinstance(private_call.kwargs["scope"], BotCommandScopeAllPrivateChats)
+    assert group_call.args[0] == main.GROUP_COMMANDS
+    assert isinstance(group_call.kwargs["scope"], BotCommandScopeAllGroupChats)
+
+
+@pytest.mark.asyncio
+async def test_ignore_non_command_group_messages(mock_update, mock_context):
+    mock_update.effective_chat.id = 999
+
+    await main._ignore_non_command_group_messages(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_not_called()
+
+
+def test_get_reply_markup_for_chat_private():
+    assert isinstance(main.get_reply_markup_for_chat(ChatType.PRIVATE), ReplyKeyboardMarkup)
+
+
+def test_get_reply_markup_for_chat_group():
+    assert main.get_reply_markup_for_chat(ChatType.GROUP) is None
+    assert main.get_reply_markup_for_chat(ChatType.SUPERGROUP) is None
 
 @pytest.mark.asyncio
 @patch('main.asyncio.to_thread', new_callable=AsyncMock)

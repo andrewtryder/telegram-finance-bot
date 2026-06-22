@@ -16,6 +16,7 @@ You are an expert Python backend developer maintaining a Telegram financial bot.
 3. **Environment Variables:** Never hardcode secrets. Always use `os.getenv()` and load them via `python-dotenv` for local testing.
 4. **Markdown Formatting:** All Telegram messages must use `parse_mode='Markdown'` and properly escape special characters if necessary.
 5. **No Hallucinated Endpoints:** For search, only use TwelveData `/symbol_search`. Quote data comes from yfinance (Yahoo Finance tickers, e.g. `BTC-USD` for crypto, `^GSPC` for indices).
+6. **Group Privacy:** In groups, only handle `/commands`. Register scoped `setMyCommands` for group chats. Keep BotFather privacy mode **Enabled**. Ignore non-command group messages via `MessageHandler` filter.
 
 ## Task Execution
 When asked to write code, provide the full updated function. If making a commit on behalf of the user, strictly enforce the commit schema.
