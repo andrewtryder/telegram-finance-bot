@@ -2,7 +2,8 @@ import os
 import logging
 import requests
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # Load environment variables
@@ -32,15 +33,31 @@ def get_help_text(first_name: str = "there") -> str:
         "❓ `/help` - Show this message again"
     )
 
+
+def get_reply_keyboard():
+    keyboard = [
+        [KeyboardButton("/stock AAPL"), KeyboardButton("/crypto BTC")],
+        [KeyboardButton("/indices"), KeyboardButton("/help")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /start")
-    await update.message.reply_text(get_help_text(update.effective_user.first_name), parse_mode='Markdown')
+    await update.message.reply_text(
+        get_help_text(update.effective_user.first_name),
+        parse_mode='Markdown',
+        reply_markup=get_reply_keyboard()
+    )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a list of commands when /help is issued."""
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /help")
-    await update.message.reply_text(get_help_text(update.effective_user.first_name), parse_mode='Markdown')
+    await update.message.reply_text(
+        get_help_text(update.effective_user.first_name),
+        parse_mode='Markdown',
+        reply_markup=get_reply_keyboard()
+    )
 
 def get_quote_formatted(symbol: str) -> str:
     """Helper function to get detailed quote data from TwelveData API."""
@@ -85,6 +102,7 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current price of a stock."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a stock ticker. Example: `/stock AAPL`", parse_mode='Markdown')
@@ -98,6 +116,7 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current price of a cryptocurrency."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a crypto symbol. Example: `/crypto BTC`", parse_mode='Markdown')
@@ -114,6 +133,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for a stock, crypto, or ETF symbol."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a search term. Example: `/search Vanguard`", parse_mode='Markdown')
@@ -150,6 +170,7 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current price of major indices using their ETF equivalents."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not TWELVEDATA_API_KEY:
         await update.message.reply_text("Error: Twelve Data API Key is not configured.")
