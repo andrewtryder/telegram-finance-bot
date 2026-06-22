@@ -8,12 +8,13 @@ on:
   workflow_dispatch: 
 
 jobs:
-  # JOB 1: LINT PR TITLE (Now with explicit security clearance)
+  # JOB 1: LINT PR TITLE
   pr-lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read
+      contents: read
+      pull-requests: write
       statuses: write
     steps:
       - uses: amannn/action-semantic-pull-request@v5
@@ -30,7 +31,7 @@ jobs:
             test
             ci
 
-  # JOB 2: DEPLOYMENT (Only runs on direct pushes or completed merges to main)
+  # JOB 2: DEPLOYMENT
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
