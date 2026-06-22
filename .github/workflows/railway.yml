@@ -4,14 +4,12 @@ on:
   push:
     branches:
       - main
-  # Optional: Allows you to trigger the deployment manually from the GitHub UI
+  # Allows you to trigger the deployment manually from the GitHub UI Actions tab
   workflow_dispatch: 
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Optional but recommended: Only deploy if the commit linting passes
-    # needs: [commitlint] 
     
     steps:
       - name: Checkout Code
@@ -19,6 +17,12 @@ jobs:
 
       - name: Install Railway CLI
         run: npm i -g @railway/cli
+
+      - name: Sync GitHub Secrets to Railway
+        # This tells Railway to securely save these variables into your Railway project
+        run: railway variables set TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" TWELVEDATA_API_KEY="${{ secrets.TWELVEDATA_API_KEY }}"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Deploy via Railway CLI
         run: railway up --detach
