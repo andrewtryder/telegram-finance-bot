@@ -3,6 +3,7 @@ from urllib.parse import quote
 import logging
 import httpx
 import time
+from cachetools import TTLCache
 import asyncio
 from functools import wraps
 from datetime import datetime, timezone
@@ -44,10 +45,10 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
 
-# API Cache (URL -> (timestamp, data))
-API_CACHE = {}
-# Quote cache (yfinance symbol -> (timestamp, info dict))
-QUOTE_CACHE = {}
+# API Cache (URL -> data)
+API_CACHE = TTLCache(maxsize=100, ttl=600)
+# Quote cache (yfinance symbol -> info dict)
+QUOTE_CACHE = TTLCache(maxsize=100, ttl=600)
 CACHE_TTL = 600  # 10 minutes
 
 INDEX_MAPPING = {
@@ -88,14 +89,12 @@ async def _get_yfinance_info(yfinance_symbol: str) -> dict:
     current_time = time.time()
 
     if yfinance_symbol in QUOTE_CACHE:
-        timestamp, data = QUOTE_CACHE[yfinance_symbol]
-        if current_time - timestamp < CACHE_TTL:
-            logger.info(f"⚡ Cache HIT for symbol: {yfinance_symbol}")
-            return data
+        logger.info(f"⚡ Cache HIT for symbol: {yfinance_symbol}")
+        return QUOTE_CACHE[yfinance_symbol]
 
     logger.info(f"🐢 Cache MISS for symbol: {yfinance_symbol} - fetching from yfinance")
     info = await asyncio.to_thread(_fetch_yfinance_info, yfinance_symbol)
-    QUOTE_CACHE[yfinance_symbol] = (current_time, info)
+    QUOTE_CACHE[yfinance_symbol] = info
     return info
 
 
@@ -112,10 +111,8 @@ async def fetch_with_cache(url: str) -> dict:
 
     # Check cache
     if url in API_CACHE:
-        timestamp, data = API_CACHE[url]
-        if current_time - timestamp < CACHE_TTL:
-            logger.info(f"⚡ Cache HIT for URL: {url.split('?')[0]} (params hidden)")
-            return data
+        logger.info(f"⚡ Cache HIT for URL: {url.split('?')[0]} (params hidden)")
+        return API_CACHE[url]
 
     # Cache MISS - fetch async
     logger.info(f"🐢 Cache MISS for URL: {url.split('?')[0]} - fetching from API")
@@ -125,7 +122,7 @@ async def fetch_with_cache(url: str) -> dict:
         data = response.json()
 
         # Save to cache
-        API_CACHE[url] = (current_time, data)
+        API_CACHE[url] = data
         return data
 
 
