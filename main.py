@@ -15,7 +15,8 @@ from telegram import (
     BotCommandScopeAllPrivateChats,
     BotCommandScopeAllGroupChats,
 )
-from telegram.constants import ChatAction, ChatType
+from telegram.constants import ChatAction, ChatType, ParseMode
+from telegram.helpers import escape_markdown
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -402,16 +403,18 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if "data" in data and len(data["data"]) > 0:
             results = data["data"][:5] # Limit to Top 5 results
-            text = f"🔍 **Search results for '{query}':**\n\n"
+            escaped_query = escape_markdown(query, version=2)
+            text = f"🔍 *Search results for '{escaped_query}':*\n\n"
             for item in results:
-                sym = item.get('symbol', 'N/A')
-                name = item.get('instrument_name', 'N/A')
-                exch = item.get('exchange', 'N/A')
-                type_ = item.get('instrument_type', 'N/A')
-                text += f"• **{sym}** - {name} ({exch}, {type_})\n"
-            await update.message.reply_text(text, parse_mode='Markdown')
+                sym = escape_markdown(item.get('symbol', 'N/A'), version=2)
+                name = escape_markdown(item.get('instrument_name', 'N/A'), version=2)
+                exch = escape_markdown(item.get('exchange', 'N/A'), version=2)
+                type_ = escape_markdown(item.get('instrument_type', 'N/A'), version=2)
+                text += f"• *{sym}* \\- {name} \\({exch}, {type_}\\)\n"
+            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await update.message.reply_text(f"No results found for '{query}'.")
+            escaped_query = escape_markdown(query, version=2)
+            await update.message.reply_text(f"No results found for '{escaped_query}'\\.", parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
         logger.error(f"Error searching for {query}: {e}")
         await update.message.reply_text("Sorry, the search function is currently unavailable.")
