@@ -233,3 +233,49 @@ async def test_search_markdown_injection_no_results(mock_fetch, mock_update, moc
     from telegram.constants import ParseMode
     assert kwargs.get('parse_mode') == ParseMode.MARKDOWN_V2
     assert "\\*malicious\\_query\\*" in args[0]
+
+def test_benchmark_string_concat(capsys):
+    import timeit
+    from telegram.helpers import escape_markdown
+
+    def old_concat_method(results, query="test"):
+        escaped_query = escape_markdown(query, version=2)
+        text = f"🔍 *Search results for '{escaped_query}':*\n\n"
+        for item in results:
+            sym = escape_markdown(item.get('symbol', 'N/A'), version=2)
+            name = escape_markdown(item.get('instrument_name', 'N/A'), version=2)
+            exch = escape_markdown(item.get('exchange', 'N/A'), version=2)
+            type_ = escape_markdown(item.get('instrument_type', 'N/A'), version=2)
+            text += f"• *{sym}* \\- {name} \\({exch}, {type_}\\)\n"
+        return text
+
+    def new_join_method(results, query="test"):
+        escaped_query = escape_markdown(query, version=2)
+        lines = [
+            f"• *{escape_markdown(item.get('symbol', 'N/A'), version=2)}* \\- "
+            f"{escape_markdown(item.get('instrument_name', 'N/A'), version=2)} "
+            f"\\({escape_markdown(item.get('exchange', 'N/A'), version=2)}, "
+            f"{escape_markdown(item.get('instrument_type', 'N/A'), version=2)}\\)"
+            for item in results
+        ]
+        return f"🔍 *Search results for '{escaped_query}':*\n\n" + "\n".join(lines) + "\n"
+
+    results = [
+        {'symbol': f'SYM{i}', 'instrument_name': f'Company {i}', 'exchange': 'EXCH', 'instrument_type': 'Stock'}
+        for i in range(5)
+    ]
+
+    assert old_concat_method(results) == new_join_method(results)
+
+    iterations = 50000
+    old_time = timeit.timeit(lambda: old_concat_method(results), number=iterations)
+    new_time = timeit.timeit(lambda: new_join_method(results), number=iterations)
+
+    diff = old_time - new_time
+    pct_change = (diff / old_time) * 100
+
+    with capsys.disabled():
+        print(f"\n--- Benchmark Results ({iterations} iterations, 5 items) ---")
+        print(f"Old Method (+=):   {old_time:.4f} seconds")
+        print(f"New Method (join): {new_time:.4f} seconds")
+        print(f"Improvement:       {pct_change:.2f}% faster")
