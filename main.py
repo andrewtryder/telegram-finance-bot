@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote
 import logging
 import httpx
 import time
@@ -403,7 +404,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     query = " ".join(context.args)
-    url = f"https://api.twelvedata.com/symbol_search?symbol={query}&apikey={TWELVEDATA_API_KEY}"
+    encoded_query = quote(query)
+    url = f"https://api.twelvedata.com/symbol_search?symbol={encoded_query}&apikey={TWELVEDATA_API_KEY}"
     
     try:
         data = await fetch_with_cache(url)
