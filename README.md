@@ -53,7 +53,7 @@ To run this bot locally or in production, you will need:
    Open `.env` and replace the placeholder text with your actual keys.
 5. Run the bot:
    ```bash
-   python main.py
+   python -m bot.main
    ```
 
 ## Running Tests
@@ -68,7 +68,7 @@ To run this bot locally or in production, you will need:
 
 ## Railway Deployment
 
-This project is ready to be deployed on [Railway](https://railway.app/). Railway will automatically detect this as a Python application due to the presence of `main.py` and `requirements.txt`.
+This project is ready to be deployed on [Railway](https://railway.app/). Railway will automatically detect this as a Python application due to the presence of `bot/main.py` and `requirements.txt`.
 
 1. Push this repository to GitHub.
 2. Go to Railway and create a new project from your GitHub repository.
