@@ -54,8 +54,7 @@ INDEX_MAPPING = {
     "^IXIC": "Nasdaq Composite",
 }
 
-BOT_COMMANDS = [
-    BotCommand("start", "Show welcome message"),
+COMMON_COMMANDS = [
     BotCommand("stock", "Get a stock price (e.g. /stock AAPL)"),
     BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
     BotCommand("search", "Search for a symbol"),
@@ -66,16 +65,11 @@ BOT_COMMANDS = [
     BotCommand("help", "Show available commands"),
 ]
 
-GROUP_COMMANDS = [
-    BotCommand("stock", "Get a stock price (e.g. /stock AAPL)"),
-    BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
-    BotCommand("search", "Search for a symbol"),
-    BotCommand("indices", "Major market index levels"),
-    BotCommand("stockinfo", "Get detailed stock info"),
-    BotCommand("stocknews", "Get recent news for a stock"),
-    BotCommand("marketcap", "Get market cap for a stock"),
-    BotCommand("help", "Show available commands"),
-]
+BOT_COMMANDS = [
+    BotCommand("start", "Show welcome message"),
+] + COMMON_COMMANDS
+
+GROUP_COMMANDS = COMMON_COMMANDS
 
 # Ignore non-command messages in groups (defense-in-depth alongside BotFather privacy mode).
 GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL
