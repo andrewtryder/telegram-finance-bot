@@ -1,0 +1,11 @@
+fix: use twelvedata SDK to prevent API key exposure in logs
+
+Refactors the search command to utilize the official `twelvedata` SDK instead of manually constructing requests via `httpx`.
+
+🎯 **What:** The previous implementation used `httpx` and called `response.raise_for_status()`. This raised an `httpx.HTTPStatusError` which natively included the full request URL in its string representation. The URL contained the API key as a query parameter (`apikey=...`). The error was subsequently passed to `logger.error()`, natively exposing the secret key in the system logs.
+
+⚠️ **Risk:** Any error during the search API call (such as a 4xx or 5xx code) would cause the raw API key to be written out in plaintext to the production logs. This compromises the service credentials, potentially leading to unauthorized usage, quota exhaustion, and financial impact depending on the billing structure.
+
+🛡️ **Solution:** Switched the HTTP client from `httpx` to the official `twelvedata` Python SDK. The SDK handles error responses by raising custom exceptions (e.g., `InvalidApiKeyError`, `TwelveDataError`) which do NOT leak the request URL nor the API key in their standard exception strings. Furthermore, the caching mechanism (which also manually logged parts of URLs) was stripped out since the SDK provides a robust, pre-built query structure.
+
+Also updated unit tests to mock `td_client` instead of caching/httpx behavior.

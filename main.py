@@ -1,6 +1,6 @@
 import os
 import logging
-import httpx
+from twelvedata import TDClient
 import time
 import asyncio
 from datetime import datetime, timezone
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Constants
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
+td_client = TDClient(apikey=TWELVEDATA_API_KEY) if TWELVEDATA_API_KEY else None
 
 # API Cache (URL -> (timestamp, data))
 API_CACHE = {}
@@ -107,29 +108,6 @@ def _format_market_time(info: dict) -> str:
     if market_time:
         return datetime.fromtimestamp(market_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return "Unknown time"
-
-
-async def fetch_with_cache(url: str) -> dict:
-    """Fetch URL with a 10-minute in-memory cache using async httpx."""
-    current_time = time.time()
-
-    # Check cache
-    if url in API_CACHE:
-        timestamp, data = API_CACHE[url]
-        if current_time - timestamp < CACHE_TTL:
-            logger.info(f"⚡ Cache HIT for URL: {url.split('?')[0]} (params hidden)")
-            return data
-
-    # Cache MISS - fetch async
-    logger.info(f"🐢 Cache MISS for URL: {url.split('?')[0]} - fetching from API")
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        # Save to cache
-        API_CACHE[url] = (current_time, data)
-        return data
 
 
 def get_help_text(first_name: str = "there") -> str:
@@ -398,21 +376,20 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please provide a search term. Example: `/search Vanguard`", parse_mode='Markdown')
         return
 
-    if not TWELVEDATA_API_KEY:
+    if not td_client:
         await update.message.reply_text("Error: Twelve Data API Key is not configured.")
         return
 
     query = " ".join(context.args)
-    url = f"https://api.twelvedata.com/symbol_search?symbol={query}&apikey={TWELVEDATA_API_KEY}"
     
     try:
-        data = await fetch_with_cache(url)
+        data = await asyncio.to_thread(lambda: td_client.symbol_search(symbol=query).as_json())
         
         # Debug logging
-        logger.info(f"Raw Search API Response for '{query}': {data}")
+        logger.info(f"Raw Search API Response for '{query}' retrieved.")
 
-        if "data" in data and len(data["data"]) > 0:
-            results = data["data"][:5] # Limit to Top 5 results
+        if data and len(data) > 0:
+            results = data[:5] # Limit to Top 5 results
             text = f"🔍 **Search results for '{query}':**\n\n"
             for item in results:
                 sym = item.get('symbol', 'N/A')
