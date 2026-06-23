@@ -4,6 +4,7 @@ import logging
 import httpx
 import time
 import asyncio
+from functools import wraps
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import yfinance as yf
@@ -127,6 +128,20 @@ async def fetch_with_cache(url: str) -> dict:
         return data
 
 
+def send_action(action):
+    """Sends `action` while processing func command."""
+    def decorator(func):
+        @wraps(func)
+        async def command_func(update, context, *args, **kwargs):
+            try:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
+            except Exception as e:
+                logger.error(f"Failed to send chat action {action}: {e}")
+            return await func(update, context, *args, **kwargs)
+        return command_func
+    return decorator
+
+
 def get_help_text(first_name: str = "there") -> str:
     """Returns the standard help/welcome message."""
     return (
@@ -199,11 +214,11 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
         logger.error(f"Network/Code Error fetching data for {yfinance_symbol}: {e}")
         return "Sorry, I couldn't fetch the data right now. Please try again later."
 
+@send_action(ChatAction.TYPING)
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current price of a stock."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a stock ticker. Example: `/stock AAPL`", parse_mode='Markdown')
@@ -214,11 +229,11 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await get_quote_formatted(yfinance_symbol, yfinance_symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
 
+@send_action(ChatAction.TYPING)
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current price of a cryptocurrency."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a crypto symbol. Example: `/crypto BTC`", parse_mode='Markdown')
@@ -253,10 +268,10 @@ def _truncate_text(text: str, max_length: int = 400) -> str:
         return text
     return text[:max_length].rsplit(' ', 1)[0] + "..."
 
+@send_action(ChatAction.TYPING)
 async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     if not context.args:
         await update.message.reply_text("Please provide a stock ticker. Example: `/stockinfo AAPL`", parse_mode='Markdown')
@@ -314,10 +329,10 @@ def _fetch_yfinance_news(symbol: str) -> list:
         logger.error(f"yfinance news error for {symbol}: {e}")
         return []
 
+@send_action(ChatAction.TYPING)
 async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     if not context.args:
         await update.message.reply_text("Please provide a stock ticker. Example: `/stocknews AAPL`", parse_mode='Markdown')
@@ -351,10 +366,10 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error fetching news for {yfinance_symbol}: {e}")
         await update.message.reply_text("Sorry, I couldn't fetch news for that symbol right now.")
 
+@send_action(ChatAction.TYPING)
 async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     if not context.args:
         await update.message.reply_text("Please provide a stock ticker. Example: `/marketcap AAPL`", parse_mode='Markdown')
@@ -376,11 +391,11 @@ async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error fetching market cap for {yfinance_symbol}: {e}")
         await update.message.reply_text("Sorry, I couldn't fetch data for that symbol right now.")
 
+@send_action(ChatAction.TYPING)
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for a stock, crypto, or ETF symbol."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     if not context.args:
         await update.message.reply_text("Please provide a search term. Example: `/search Vanguard`", parse_mode='Markdown')
@@ -416,11 +431,11 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error searching for {query}: {e}")
         await update.message.reply_text("Sorry, the search function is currently unavailable.")
 
+@send_action(ChatAction.TYPING)
 async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current levels of major market indices."""
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     response_text = "📊 **Major Market Indices**\n\n"
 
