@@ -161,16 +161,9 @@ async def _ignore_non_command_group_messages(
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a message when the command /start is issued."""
-    logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /start")
-    await update.message.reply_text(
-        get_help_text(update.effective_user.first_name),
-        parse_mode='Markdown'
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a list of commands when /help is issued."""
-    logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /help")
+    """Send a message when the command /start or /help is issued."""
+    command = update.message.text.split()[0] if update.message and update.message.text else "/start"
+    logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran {command}")
     await update.message.reply_text(
         get_help_text(update.effective_user.first_name),
         parse_mode='Markdown'
@@ -473,7 +466,7 @@ def main():
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("help", start))
     application.add_handler(CommandHandler("stock", stock))
     application.add_handler(CommandHandler("crypto", crypto))
     application.add_handler(CommandHandler("search", search))
