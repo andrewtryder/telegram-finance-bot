@@ -188,3 +188,48 @@ async def test_search_no_api_key(mock_update, mock_context):
     await main.search(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once_with("Error: Twelve Data API Key is not configured.")
+
+@pytest.mark.asyncio
+@patch('main.TWELVEDATA_API_KEY', 'fake_key')
+@patch('main.fetch_with_cache', new_callable=AsyncMock)
+async def test_search_markdown_injection(mock_fetch, mock_update, mock_context):
+    mock_context.args = ['*malicious_query*']
+    mock_fetch.return_value = {
+        "data": [
+            {
+                "symbol": "TEST*",
+                "instrument_name": "Test Co.",
+                "exchange": "NYSE",
+                "instrument_type": "Common Stock"
+            }
+        ]
+    }
+
+    await main.search(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    args, kwargs = mock_update.message.reply_text.call_args
+
+    # Check parse mode is MarkdownV2
+    from telegram.constants import ParseMode
+    assert kwargs.get('parse_mode') == ParseMode.MARKDOWN_V2
+
+    # Check that the malicious query and returned symbol are escaped
+    assert "\\*malicious\\_query\\*" in args[0]
+    assert "TEST\\*" in args[0]
+
+@pytest.mark.asyncio
+@patch('main.TWELVEDATA_API_KEY', 'fake_key')
+@patch('main.fetch_with_cache', new_callable=AsyncMock)
+async def test_search_markdown_injection_no_results(mock_fetch, mock_update, mock_context):
+    mock_context.args = ['*malicious_query*']
+    mock_fetch.return_value = {"data": []}
+
+    await main.search(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    args, kwargs = mock_update.message.reply_text.call_args
+
+    from telegram.constants import ParseMode
+    assert kwargs.get('parse_mode') == ParseMode.MARKDOWN_V2
+    assert "\\*malicious\\_query\\*" in args[0]
