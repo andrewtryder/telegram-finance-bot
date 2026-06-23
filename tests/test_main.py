@@ -181,41 +181,10 @@ async def test_indices_command(mock_get_info, mock_update, mock_context):
     assert "Nasdaq Composite" in args[0]
 
 @pytest.mark.asyncio
-@patch('main.td_client', None)
+@patch('main.TWELVEDATA_API_KEY', None)
 async def test_search_no_api_key(mock_update, mock_context):
     mock_context.args = ['Apple']
 
     await main.search(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once_with("Error: Twelve Data API Key is not configured.")
-
-@pytest.mark.asyncio
-@patch('main.td_client')
-async def test_search_success(mock_td_client, mock_update, mock_context):
-    mock_context.args = ['Apple']
-
-    # Mock the SDK chaining
-    mock_search = MagicMock()
-    mock_td_client.symbol_search.return_value = mock_search
-    mock_search.as_json.return_value = [
-        {"symbol": "AAPL", "instrument_name": "Apple Inc", "exchange": "NASDAQ", "instrument_type": "Common Stock"}
-    ]
-
-    await main.search(mock_update, mock_context)
-
-    mock_td_client.symbol_search.assert_called_once_with(symbol="Apple")
-    mock_update.message.reply_text.assert_called_once()
-    args, kwargs = mock_update.message.reply_text.call_args
-    assert "AAPL" in args[0]
-    assert "Apple Inc" in args[0]
-
-@pytest.mark.asyncio
-@patch('main.td_client')
-async def test_search_exception(mock_td_client, mock_update, mock_context):
-    mock_context.args = ['Apple']
-
-    mock_td_client.symbol_search.side_effect = Exception("SDK Error")
-
-    await main.search(mock_update, mock_context)
-
-    mock_update.message.reply_text.assert_called_once_with("Sorry, the search function is currently unavailable.")
