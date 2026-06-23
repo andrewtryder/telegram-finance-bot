@@ -59,6 +59,9 @@ BOT_COMMANDS = [
     BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
     BotCommand("search", "Search for a symbol"),
     BotCommand("indices", "Major market index levels"),
+    BotCommand("stockinfo", "Get detailed stock info"),
+    BotCommand("stocknews", "Get recent news for a stock"),
+    BotCommand("marketcap", "Get market cap for a stock"),
     BotCommand("help", "Show available commands"),
 ]
 
@@ -67,6 +70,9 @@ GROUP_COMMANDS = [
     BotCommand("crypto", "Get a crypto price (e.g. /crypto BTC)"),
     BotCommand("search", "Search for a symbol"),
     BotCommand("indices", "Major market index levels"),
+    BotCommand("stockinfo", "Get detailed stock info"),
+    BotCommand("stocknews", "Get recent news for a stock"),
+    BotCommand("marketcap", "Get market cap for a stock"),
     BotCommand("help", "Show available commands"),
 ]
 
@@ -135,22 +141,11 @@ def get_help_text(first_name: str = "there") -> str:
         "🪙 `/crypto <symbol>` - Get the current price of a crypto (e.g., /crypto BTC)\n"
         "🔍 `/search <query>` - Search for a symbol (e.g., /search Apple)\n"
         "📉 `/indices` (or `/indicies`) - Get the current levels of major market indices\n"
+        "ℹ️ `/stockinfo <ticker>` - Get detailed info for a stock\n"
+        "📰 `/stocknews <ticker>` - Get recent news for a stock\n"
+        "💰 `/marketcap <ticker>` - Get market cap for a stock\n"
         "❓ `/help` - Show this message again"
     )
-
-
-def get_reply_keyboard():
-    keyboard = [
-        [KeyboardButton("/stock AAPL"), KeyboardButton("/crypto BTC")],
-        [KeyboardButton("/indices"), KeyboardButton("/help")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-
-
-def get_reply_markup_for_chat(chat_type: str):
-    if chat_type == ChatType.PRIVATE:
-        return get_reply_keyboard()
-    return None
 
 
 async def setup_commands(application: Application) -> None:
@@ -175,8 +170,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /start")
     await update.message.reply_text(
         get_help_text(update.effective_user.first_name),
-        parse_mode='Markdown',
-        reply_markup=get_reply_markup_for_chat(update.effective_chat.type)
+        parse_mode='Markdown'
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,8 +178,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {update.effective_user.username or update.effective_user.first_name} ran /help")
     await update.message.reply_text(
         get_help_text(update.effective_user.first_name),
-        parse_mode='Markdown',
-        reply_markup=get_reply_markup_for_chat(update.effective_chat.type)
+        parse_mode='Markdown'
     )
 
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None) -> str:
@@ -248,6 +241,152 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_symbol = crypto_display_symbol(symbol)
     result = await get_quote_formatted(yfinance_symbol, display_symbol)
     await update.message.reply_text(result, parse_mode='Markdown')
+
+def _format_large_number(num: float) -> str:
+    if num is None:
+        return "N/A"
+    try:
+        num = float(num)
+        if num >= 1e12:
+            return f"${num/1e12:.2f}T"
+        elif num >= 1e9:
+            return f"${num/1e9:.2f}B"
+        elif num >= 1e6:
+            return f"${num/1e6:.2f}M"
+        else:
+            return f"${num:,.2f}"
+    except (ValueError, TypeError):
+        return "N/A"
+
+def _truncate_text(text: str, max_length: int = 400) -> str:
+    if not text:
+        return "N/A"
+    if len(text) <= max_length:
+        return text
+    return text[:max_length].rsplit(' ', 1)[0] + "..."
+
+async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    command_text = update.message.text
+    logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    if not context.args:
+        await update.message.reply_text("Please provide a stock ticker. Example: `/stockinfo AAPL`", parse_mode='Markdown')
+        return
+
+    ticker = context.args[0]
+    yfinance_symbol = to_yfinance_stock(ticker)
+
+    try:
+        info = await _get_yfinance_info(yfinance_symbol)
+
+        name = info.get("shortName") or info.get("longName") or yfinance_symbol
+        sector = info.get("sector", "N/A")
+        industry = info.get("industry", "N/A")
+        market_cap = _format_large_number(info.get("marketCap"))
+        pe_ratio = info.get("trailingPE") or info.get("forwardPE")
+        pe_str = f"{pe_ratio:.2f}" if isinstance(pe_ratio, (int, float)) else "N/A"
+
+        div_yield = info.get("dividendYield")
+        div_str = f"{div_yield * 100:.2f}%" if isinstance(div_yield, (int, float)) else "N/A"
+
+        high52 = info.get("fiftyTwoWeekHigh")
+        high52_str = f"${high52:,.2f}" if isinstance(high52, (int, float)) else "N/A"
+
+        low52 = info.get("fiftyTwoWeekLow")
+        low52_str = f"${low52:,.2f}" if isinstance(low52, (int, float)) else "N/A"
+
+        summary = _truncate_text(info.get("longBusinessSummary", "No summary available."))
+
+        lines = [
+            f"ℹ️ **{name} ({yfinance_symbol})**",
+            f"**Sector:** {sector}",
+            f"**Industry:** {industry}",
+            "",
+            f"**Market Cap:** {market_cap}",
+            f"**P/E Ratio:** {pe_str}",
+            f"**Dividend Yield:** {div_str}",
+            f"**52W High/Low:** {high52_str} / {low52_str}",
+            "",
+            f"**Summary:** {summary}"
+        ]
+
+        await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error fetching info for {yfinance_symbol}: {e}")
+        await update.message.reply_text("Sorry, I couldn't fetch info for that symbol right now.")
+
+def _fetch_yfinance_news(symbol: str) -> list:
+    import yfinance as yf
+    try:
+        t = yf.Ticker(symbol)
+        return t.news
+    except Exception as e:
+        logger.error(f"yfinance news error for {symbol}: {e}")
+        return []
+
+async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    command_text = update.message.text
+    logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    if not context.args:
+        await update.message.reply_text("Please provide a stock ticker. Example: `/stocknews AAPL`", parse_mode='Markdown')
+        return
+
+    ticker = context.args[0]
+    yfinance_symbol = to_yfinance_stock(ticker)
+
+    try:
+        news_items = await asyncio.to_thread(_fetch_yfinance_news, yfinance_symbol)
+        if not news_items:
+            await update.message.reply_text(f"No recent news found for {yfinance_symbol}.")
+            return
+
+        lines = [f"📰 **Recent news for {yfinance_symbol}**", ""]
+        for item in news_items[:5]:
+            content = item.get('content', {}) if 'content' in item else item
+            title = content.get('title', 'No Title')
+
+            url = ""
+            if 'clickThroughUrl' in content:
+                url = content['clickThroughUrl'].get('url', '')
+            elif 'link' in item:
+                url = item['link']
+
+            lines.append(f"• [{title}]({url})")
+
+        await update.message.reply_text("\n".join(lines), parse_mode='Markdown', disable_web_page_preview=True)
+
+    except Exception as e:
+        logger.error(f"Error fetching news for {yfinance_symbol}: {e}")
+        await update.message.reply_text("Sorry, I couldn't fetch news for that symbol right now.")
+
+async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    command_text = update.message.text
+    logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    if not context.args:
+        await update.message.reply_text("Please provide a stock ticker. Example: `/marketcap AAPL`", parse_mode='Markdown')
+        return
+
+    ticker = context.args[0]
+    yfinance_symbol = to_yfinance_stock(ticker)
+
+    try:
+        info = await _get_yfinance_info(yfinance_symbol)
+
+        name = info.get("shortName") or info.get("longName") or yfinance_symbol
+        market_cap = _format_large_number(info.get("marketCap"))
+
+        text = f"💰 **{name} ({yfinance_symbol})** Market Cap: {market_cap}"
+        await update.message.reply_text(text, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error fetching market cap for {yfinance_symbol}: {e}")
+        await update.message.reply_text("Sorry, I couldn't fetch data for that symbol right now.")
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for a stock, crypto, or ETF symbol."""
@@ -342,6 +481,9 @@ def main():
     application.add_handler(CommandHandler("stock", stock))
     application.add_handler(CommandHandler("crypto", crypto))
     application.add_handler(CommandHandler("search", search))
+    application.add_handler(CommandHandler("stockinfo", stockinfo))
+    application.add_handler(CommandHandler("stocknews", stocknews))
+    application.add_handler(CommandHandler("marketcap", marketcap))
     
     # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))
