@@ -54,10 +54,10 @@ async def test_start_command_group_no_keyboard(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-async def test_help_command_group_no_keyboard(mock_update, mock_context):
+async def test_help_or_start_command_group_no_keyboard(mock_update, mock_context):
     mock_update.effective_chat.type = ChatType.SUPERGROUP
 
-    await main.help_command(mock_update, mock_context)
+    await main.start(mock_update, mock_context)
 
     _, kwargs = mock_update.message.reply_text.call_args
     assert "reply_markup" not in kwargs
