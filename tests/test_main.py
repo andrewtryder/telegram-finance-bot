@@ -40,7 +40,7 @@ async def test_start_command(mock_update, mock_context):
     args, kwargs = mock_update.message.reply_text.call_args
     assert "Hi TestUser!" in args[0]
     assert "/stock" in args[0]
-    assert isinstance(kwargs["reply_markup"], ReplyKeyboardMarkup)
+    assert "reply_markup" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_start_command_group_no_keyboard(mock_update, mock_context):
     await main.start(mock_update, mock_context)
 
     _, kwargs = mock_update.message.reply_text.call_args
-    assert kwargs["reply_markup"] is None
+    assert "reply_markup" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_help_command_group_no_keyboard(mock_update, mock_context):
     await main.help_command(mock_update, mock_context)
 
     _, kwargs = mock_update.message.reply_text.call_args
-    assert kwargs["reply_markup"] is None
+    assert "reply_markup" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -88,13 +88,6 @@ async def test_ignore_non_command_group_messages(mock_update, mock_context):
     mock_update.message.reply_text.assert_not_called()
 
 
-def test_get_reply_markup_for_chat_private():
-    assert isinstance(main.get_reply_markup_for_chat(ChatType.PRIVATE), ReplyKeyboardMarkup)
-
-
-def test_get_reply_markup_for_chat_group():
-    assert main.get_reply_markup_for_chat(ChatType.GROUP) is None
-    assert main.get_reply_markup_for_chat(ChatType.SUPERGROUP) is None
 
 @pytest.mark.asyncio
 @patch('main.asyncio.to_thread', new_callable=AsyncMock)
