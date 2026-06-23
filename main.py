@@ -419,13 +419,16 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "data" in data and len(data["data"]) > 0:
             results = data["data"][:5] # Limit to Top 5 results
             escaped_query = escape_markdown(query, version=2)
-            text = f"🔍 *Search results for '{escaped_query}':*\n\n"
-            for item in results:
-                sym = escape_markdown(item.get('symbol', 'N/A'), version=2)
-                name = escape_markdown(item.get('instrument_name', 'N/A'), version=2)
-                exch = escape_markdown(item.get('exchange', 'N/A'), version=2)
-                type_ = escape_markdown(item.get('instrument_type', 'N/A'), version=2)
-                text += f"• *{sym}* \\- {name} \\({exch}, {type_}\\)\n"
+
+            lines = [
+                f"• *{escape_markdown(item.get('symbol', 'N/A'), version=2)}* \\- "
+                f"{escape_markdown(item.get('instrument_name', 'N/A'), version=2)} "
+                f"\\({escape_markdown(item.get('exchange', 'N/A'), version=2)}, "
+                f"{escape_markdown(item.get('instrument_type', 'N/A'), version=2)}\\)"
+                for item in results
+            ]
+            text = f"🔍 *Search results for '{escaped_query}':*\n\n" + "\n".join(lines) + "\n"
+
             await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
         else:
             escaped_query = escape_markdown(query, version=2)
