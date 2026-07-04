@@ -1,10 +1,12 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from telegram import Update, User, Message, Chat, ReplyKeyboardMarkup
-from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats
+from telegram import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, Chat, Message, Update, User
 from telegram.constants import ChatType
-from telegram.ext import ContextTypes, Application
+from telegram.ext import Application, ContextTypes
+
 from bot.commands import basics as main
+
 
 @pytest.fixture
 def mock_update():
@@ -18,6 +20,7 @@ def mock_update():
     update.effective_chat.type = ChatType.PRIVATE
     return update
 
+
 @pytest.fixture
 def mock_context():
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
@@ -25,6 +28,7 @@ def mock_context():
     context.bot = MagicMock()
     context.bot.send_chat_action = AsyncMock()
     return context
+
 
 @pytest.mark.asyncio
 async def test_start_command(mock_update, mock_context):
@@ -34,6 +38,8 @@ async def test_start_command(mock_update, mock_context):
     assert "Hello TestUser!" in args[0]
     assert "/stock" in args[0]
     assert "reply_markup" in kwargs
+    assert kwargs.get("parse_mode") == "HTML"
+
 
 @pytest.mark.asyncio
 async def test_start_command_group_no_keyboard(mock_update, mock_context):
@@ -41,6 +47,8 @@ async def test_start_command_group_no_keyboard(mock_update, mock_context):
     await main.start(mock_update, mock_context)
     _, kwargs = mock_update.message.reply_text.call_args
     assert "reply_markup" not in kwargs
+    assert kwargs.get("parse_mode") == "HTML"
+
 
 @pytest.mark.asyncio
 async def test_help_or_start_command_group_no_keyboard(mock_update, mock_context):
@@ -48,6 +56,8 @@ async def test_help_or_start_command_group_no_keyboard(mock_update, mock_context
     await main.start(mock_update, mock_context)
     _, kwargs = mock_update.message.reply_text.call_args
     assert "reply_markup" not in kwargs
+    assert kwargs.get("parse_mode") == "HTML"
+
 
 @pytest.mark.asyncio
 async def test_setup_commands():
@@ -59,6 +69,7 @@ async def test_setup_commands():
     private_call, group_call = application.bot.set_my_commands.call_args_list
     assert isinstance(private_call.kwargs["scope"], BotCommandScopeAllPrivateChats)
     assert isinstance(group_call.kwargs["scope"], BotCommandScopeAllGroupChats)
+
 
 @pytest.mark.asyncio
 async def test_ignore_non_command_group_messages(mock_update, mock_context):

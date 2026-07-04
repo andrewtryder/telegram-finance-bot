@@ -3,6 +3,8 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   pull_request_target:
     types: [opened, edited, synchronize]
     branches: [ main ]
@@ -18,7 +20,7 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
-      - uses: amannn/action-semantic-pull-request@v5.5.3
+      - uses: amannn/action-semantic-pull-request@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -29,12 +31,39 @@ jobs:
             docs
             style
             refactor
-            perf
             test
             ci
 
-  # JOB 2: DEPLOYMENT (Only runs on direct pushes or completed merges to main)
+  # JOB 2: TEST AND LINT (Runs tests and linter before deploy on pushes/PRs)
+  test-and-lint:
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-test.txt
+
+      - name: Run Ruff Linter
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
+      - name: Run Tests
+        run: |
+          PYTHONPATH=. python -m pytest tests/
+
+  # JOB 3: DEPLOYMENT (Only runs on direct pushes or completed merges to main after tests pass)
   deploy:
+    needs: test-and-lint
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     
@@ -46,11 +75,11 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Sync GitHub Secrets to Railway
-        run: railway variables set TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" TWELVEDATA_API_KEY="${{ secrets.TWELVEDATA_API_KEY }}" ALLOWED_CHAT_IDS="${{ secrets.ALLOWED_CHAT_IDS }}" --service "triumphant-enthusiasm"
+        run: railway variables set TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" TWELVEDATA_API_KEY="${{ secrets.TWELVEDATA_API_KEY }}" ALLOWED_CHAT_IDS="${{ secrets.ALLOWED_CHAT_IDS }}" --service "${{ secrets.RAILWAY_SERVICE_NAME }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Deploy via Railway CLI
-        run: railway up --detach --service "triumphant-enthusiasm"
+        run: railway up --detach --service "${{ secrets.RAILWAY_SERVICE_NAME }}"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

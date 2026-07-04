@@ -1,25 +1,49 @@
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
 )
-from bot.config import logger, TELEGRAM_BOT_TOKEN
+
 from bot.commands import (
-    start,
-    setup_commands,
     _ignore_non_command_group_messages,
+    crypto,
+    indices,
+    marketcap,
+    search,
+    setup_commands,
+    start,
     stock,
     stockinfo,
     stocknews,
-    marketcap,
-    crypto,
-    indices,
-    search,
 )
+from bot.config import TELEGRAM_BOT_TOKEN, logger
+from bot.services import close_http_client, init_http_client
 
 # Optional: Only ignore text/commands in groups if you didn't enable Privacy Mode
-GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Regex(r'^/')
+GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Regex(r"^/")
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log unexpected exceptions and reply with a generic safe message."""
+    logger.exception("Exception occurred while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.message:
+        try:
+            await update.message.reply_text("An unexpected error occurred. Please try again later.")
+        except Exception as e:
+            logger.error(f"Failed to send error message to user: {e}")
+
+
+async def post_init(application) -> None:
+    await setup_commands(application)
+    await init_http_client()
+
+
+async def post_shutdown(application) -> None:
+    await close_http_client()
+
 
 def main():
     """Start the bot."""
@@ -28,10 +52,7 @@ def main():
         return
 
     application = (
-        ApplicationBuilder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .post_init(setup_commands)
-        .build()
+        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
     )
 
     # Register command handlers
@@ -47,6 +68,9 @@ def main():
     # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))
 
+    # Error handler
+    application.add_error_handler(error_handler)
+
     # Groups: only respond to /commands (matches BotFather privacy mode behavior).
     application.add_handler(
         MessageHandler(GROUP_PRIVACY_FILTER, _ignore_non_command_group_messages),
@@ -54,7 +78,8 @@ def main():
     )
 
     logger.info("Starting bot... Waiting for commands.")
-    application.run_polling()
+    application.run_polling(drop_pending_updates=True)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
