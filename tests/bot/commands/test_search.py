@@ -1,20 +1,36 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from telegram import Update, User, Message, Chat
+from telegram import Chat, Message, Update, User
+from telegram.constants import ChatType
 from telegram.ext import ContextTypes
-from telegram.constants import ChatType, ParseMode
+
+from bot import config
 from bot.commands.search import search
+from bot.utils import USER_COOLDOWNS
+
+
+@pytest.fixture(autouse=True)
+def reset_states():
+    config.ALLOWED_CHAT_IDS.clear()
+    USER_COOLDOWNS.clear()
+
 
 @pytest.fixture
 def mock_update():
     update = MagicMock(spec=Update)
     update.effective_user = MagicMock(spec=User)
     update.effective_user.first_name = "TestUser"
+    update.effective_user.id = 11111
     update.message = AsyncMock(spec=Message)
     update.message.reply_text = AsyncMock()
     update.effective_message = AsyncMock(spec=Message)
     update.effective_message.chat_id = 12345
+    update.effective_chat = MagicMock(spec=Chat)
+    update.effective_chat.id = 12345
+    update.effective_chat.type = ChatType.PRIVATE
     return update
+
 
 @pytest.fixture
 def mock_context():
@@ -24,27 +40,29 @@ def mock_context():
     context.bot.send_chat_action = AsyncMock()
     return context
 
+
 @pytest.mark.asyncio
-@patch('bot.commands.search.TWELVEDATA_API_KEY', None)
+@patch("bot.commands.search.TWELVEDATA_API_KEY", None)
 async def test_search_no_api_key(mock_update, mock_context):
-    mock_context.args = ['Apple']
+    mock_context.args = ["Apple"]
 
     await search(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once_with("Error: Twelve Data API Key is not configured.")
 
+
 @pytest.mark.asyncio
-@patch('bot.commands.search.TWELVEDATA_API_KEY', 'fake_key')
-@patch('bot.commands.search.fetch_with_cache', new_callable=AsyncMock)
-async def test_search_markdown_injection(mock_fetch, mock_update, mock_context):
-    mock_context.args = ['*malicious_query*']
+@patch("bot.commands.search.TWELVEDATA_API_KEY", "fake_key")
+@patch("bot.commands.search.fetch_with_cache", new_callable=AsyncMock)
+async def test_search_html_escaping(mock_fetch, mock_update, mock_context):
+    mock_context.args = ["<malicious_query>"]
     mock_fetch.return_value = {
         "data": [
             {
-                "symbol": "TEST*",
+                "symbol": "TEST<",
                 "instrument_name": "Test Co.",
                 "exchange": "NYSE",
-                "instrument_type": "Common Stock"
+                "instrument_type": "Common Stock",
             }
         ]
     }
@@ -54,17 +72,16 @@ async def test_search_markdown_injection(mock_fetch, mock_update, mock_context):
     mock_update.message.reply_text.assert_called_once()
     args, kwargs = mock_update.message.reply_text.call_args
 
-    assert kwargs.get('parse_mode') == ParseMode.MARKDOWN_V2
+    assert kwargs.get("parse_mode") == "HTML"
+    assert "&lt;malicious_query&gt;" in args[0]
+    assert "TEST&lt;" in args[0]
 
-    # Check that the malicious query and returned symbol are escaped
-    assert "\\*malicious\\_query\\*" in args[0]
-    assert "TEST\\*" in args[0]
 
 @pytest.mark.asyncio
-@patch('bot.commands.search.TWELVEDATA_API_KEY', 'fake_key')
-@patch('bot.commands.search.fetch_with_cache', new_callable=AsyncMock)
-async def test_search_markdown_injection_no_results(mock_fetch, mock_update, mock_context):
-    mock_context.args = ['*malicious_query*']
+@patch("bot.commands.search.TWELVEDATA_API_KEY", "fake_key")
+@patch("bot.commands.search.fetch_with_cache", new_callable=AsyncMock)
+async def test_search_html_escaping_no_results(mock_fetch, mock_update, mock_context):
+    mock_context.args = ["<malicious_query>"]
     mock_fetch.return_value = {"data": []}
 
     await search(mock_update, mock_context)
@@ -72,5 +89,16 @@ async def test_search_markdown_injection_no_results(mock_fetch, mock_update, moc
     mock_update.message.reply_text.assert_called_once()
     args, kwargs = mock_update.message.reply_text.call_args
 
-    assert kwargs.get('parse_mode') == ParseMode.MARKDOWN_V2
-    assert "\\*malicious\\_query\\*" in args[0]
+    assert kwargs.get("parse_mode") == "HTML"
+    assert "&lt;malicious_query&gt;" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_search_overlong_query(mock_update, mock_context):
+    mock_context.args = ["A" * 65]
+
+    await search(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once()
+    args, kwargs = mock_update.message.reply_text.call_args
+    assert "Search query is too long" in args[0]
