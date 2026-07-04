@@ -54,12 +54,12 @@ jobs:
 
       - name: Run Ruff Linter
         run: |
-          ruff check .
-          ruff format --check .
+          python -m ruff check .
+          python -m ruff format --check .
 
       - name: Run Tests
         run: |
-          PYTHONPATH=. pytest tests/
+          PYTHONPATH=. python -m pytest tests/
 
   # JOB 3: DEPLOYMENT (Only runs on direct pushes or completed merges to main after tests pass)
   deploy:
