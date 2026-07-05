@@ -1,6 +1,20 @@
+<!-- OpenGraph / Social Preview -->
+<meta property="og:title" content="Telegram Financial Bot" />
+<meta property="og:description" content="A Telegram bot for real-time stock, crypto, and index prices via yfinance and Twelve Data." />
+<meta property="og:image" content="https://raw.githubusercontent.com/andrewtryder/telegram-stock-price-bot/main/docs/screenshot.png" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://github.com/andrewtryder/telegram-stock-price-bot" />
+
 # Telegram Financial Bot
 
+[![Docker Image](https://ghcr.io/andrewtryder/telegram-stock-price-bot)](https://ghcr.io/andrewtryder/telegram-stock-price-bot)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/6k39OM?referralCode=cPw57c&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo Finance), with symbol search powered by the Twelve Data API.
+
+## Preview
+
+![Telegram Financial Bot in action](https://raw.githubusercontent.com/andrewtryder/telegram-stock-price-bot/main/docs/screenshot.png)
 
 ## Features
 
@@ -33,6 +47,48 @@ To run this bot locally or in production, you will need:
 2. **Twelve Data API Key** (required for `/search` only):
    - Go to [Twelve Data](https://twelvedata.com/) and sign up for a free account.
    - Navigate to your dashboard to find your API key.
+
+## Docker
+
+The easiest way to run the bot. Pre-built multi-platform images (`linux/amd64`, `linux/arm64`) are published automatically to the GitHub Container Registry on every push to `main`.
+
+### Pull and run from GHCR
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/andrewtryder/telegram-stock-price-bot:latest
+
+# Run using your .env file
+docker run --env-file .env ghcr.io/andrewtryder/telegram-stock-price-bot:latest
+```
+
+> **Note:** If the package is private, you must first authenticate: `echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin`
+
+### Run with Docker Compose
+
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  bot:
+    image: ghcr.io/andrewtryder/telegram-stock-price-bot:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+```
+
+Then:
+
+```bash
+docker compose up -d
+```
+
+### Build locally from source
+
+```bash
+docker build -t telegram-stock-price-bot .
+docker run --env-file .env telegram-stock-price-bot
+```
 
 ## Local Setup
 
