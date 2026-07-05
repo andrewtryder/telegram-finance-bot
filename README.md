@@ -68,6 +68,8 @@ To run this bot locally or in production, you will need:
 
 ## Railway Deployment
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/6k39OM?referralCode=cPw57c&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 This project is ready to be deployed on [Railway](https://railway.app/). Railway will automatically detect this as a Python application due to the presence of `bot/main.py` and `requirements.txt`.
 
 1. Push this repository to GitHub.
