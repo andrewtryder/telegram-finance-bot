@@ -23,9 +23,9 @@ A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo 
 
 - `/start` - Displays a welcome message and lists available commands.
 - `/stock <ticker>` - Fetches the current price of a stock (e.g., `/stock AAPL`).
-- `/stockinfo <ticker>` - Fetches company information such as sector, industry, P/E ratio, dividend yield, and 52-week range.
-- `/stocknews <ticker>` - Fetches recent news headlines for a stock.
-- `/marketcap <ticker>` - Fetches a company's market capitalization.
+- `/stockinfo <ticker>` - Fetches company information such as sector, industry, P/E ratio, dividend yield, and 52-week range (e.g., `/stockinfo AAPL`).
+- `/stocknews <ticker>` - Fetches recent news headlines for a stock (e.g., `/stocknews AAPL`).
+- `/marketcap <ticker>` - Fetches a company's market capitalization (e.g., `/marketcap AAPL`).
 - `/crypto <symbol>` - Fetches the current price of a cryptocurrency (e.g., `/crypto BTC` or `/crypto ETH`).
 - `/indices` - Fetches current levels of major market indices (S&P 500, Dow Jones, Nasdaq Composite).
 - `/search <query>` - Search for a symbol via Twelve Data (e.g., `/search Apple`).
@@ -54,12 +54,13 @@ To run this bot locally or in production, you will need:
    - Go to [Twelve Data](https://twelvedata.com/) and sign up for a free account.
    - Navigate to your dashboard to find your API key.
 
-3. **Optional chat allowlist**:
-   - Set `ALLOWED_CHAT_IDS` to a comma-separated list of Telegram chat IDs if you want to restrict the bot to specific private chats, groups, or supergroups.
+3. **Allowed Chat IDs** (optional):
+   - Set `ALLOWED_CHAT_IDS` to a comma-separated list of allowed Telegram user or group IDs (e.g., `12345678,-10012345678`) to restrict bot access.
+   - If not set, the bot responds to all incoming commands.
 
 ## Docker
 
-The easiest way to run the bot. Pre-built multi-platform images (`linux/amd64`, `linux/arm64`) are published automatically to the GitHub Container Registry.
+The easiest way to run the bot. Pre-built Docker images (`linux/amd64`) are published automatically to the GitHub Container Registry.
 
 - Pushes to `main` publish `latest` and traceable SHA tags.
 - Release Please releases publish semantic version tags such as `0.2.0`, `0.2`, and `0`.
@@ -161,5 +162,5 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
 4. Add the following environment variables (which you also put into GitHub Secrets):
    - `TELEGRAM_BOT_TOKEN`
    - `TWELVEDATA_API_KEY` (for `/search` only)
-   - `ALLOWED_CHAT_IDS` (optional comma-separated chat allowlist)
+   - `ALLOWED_CHAT_IDS` (optional, to restrict bot access to specific chat IDs)
 5. Railway will automatically build and deploy your bot.
