@@ -8,6 +8,7 @@
 # Telegram Financial Bot
 
 [![CI/CD Pipeline](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml)
+[![Release Please](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/release-please.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/release-please.yml)
 [![Docker Image Publish](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/docker-publish.yml)
 [![Docker Registry](https://img.shields.io/badge/docker-GHCR-blue?style=flat&logo=docker&logoColor=white)](https://github.com/andrewtryder/telegram-stock-price-bot/pkgs/container/telegram-stock-price-bot)
 [![License](https://img.shields.io/github/license/andrewtryder/telegram-stock-price-bot)](https://github.com/andrewtryder/telegram-stock-price-bot/blob/main/LICENSE)
@@ -21,7 +22,10 @@ A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo 
 ## Features
 
 - `/start` - Displays a welcome message and lists available commands.
-- `/stock <ticker>` - Fetches the current price of a given stock (e.g., `/stock AAPL`).
+- `/stock <ticker>` - Fetches the current price of a stock (e.g., `/stock AAPL`).
+- `/stockinfo <ticker>` - Fetches company information such as sector, industry, P/E ratio, dividend yield, and 52-week range.
+- `/stocknews <ticker>` - Fetches recent news headlines for a stock.
+- `/marketcap <ticker>` - Fetches a company's market capitalization.
 - `/crypto <symbol>` - Fetches the current price of a cryptocurrency (e.g., `/crypto BTC` or `/crypto ETH`).
 - `/indices` - Fetches current levels of major market indices (S&P 500, Dow Jones, Nasdaq Composite).
 - `/search <query>` - Search for a symbol via Twelve Data (e.g., `/search Apple`).
@@ -50,15 +54,24 @@ To run this bot locally or in production, you will need:
    - Go to [Twelve Data](https://twelvedata.com/) and sign up for a free account.
    - Navigate to your dashboard to find your API key.
 
+3. **Optional chat allowlist**:
+   - Set `ALLOWED_CHAT_IDS` to a comma-separated list of Telegram chat IDs if you want to restrict the bot to specific private chats, groups, or supergroups.
+
 ## Docker
 
-The easiest way to run the bot. Pre-built multi-platform images (`linux/amd64`, `linux/arm64`) are published automatically to the GitHub Container Registry on every push to `main`.
+The easiest way to run the bot. Pre-built multi-platform images (`linux/amd64`, `linux/arm64`) are published automatically to the GitHub Container Registry.
+
+- Pushes to `main` publish `latest` and traceable SHA tags.
+- Release Please releases publish semantic version tags such as `0.2.0`, `0.2`, and `0`.
 
 ### Pull and run from GHCR
 
 ```bash
 # Pull the latest image
 docker pull ghcr.io/andrewtryder/telegram-stock-price-bot:latest
+
+# Or pin a released version
+docker pull ghcr.io/andrewtryder/telegram-stock-price-bot:0.1.0
 
 # Run using your .env file
 docker run --env-file .env ghcr.io/andrewtryder/telegram-stock-price-bot:latest
@@ -108,11 +121,23 @@ docker run --env-file .env telegram-stock-price-bot
    ```bash
    cp .env.example .env
    ```
-   Open `.env` and replace the placeholder text with your actual keys.
+   Open `.env` and replace the placeholder text with your actual keys. `ALLOWED_CHAT_IDS` can be left empty for public use.
 5. Run the bot:
    ```bash
    python -m bot.main
    ```
+
+## Versioning and Releases
+
+This project uses Release Please with Conventional Commits to automate semantic versioning.
+
+- `fix:` commits create patch releases.
+- `feat:` commits create minor releases.
+- `feat!:`, `fix!:`, or `BREAKING CHANGE:` create breaking releases.
+
+The current version is tracked in `version.txt`, `pyproject.toml`, and `bot/__init__.py`. When a release PR is merged, Release Please updates `CHANGELOG.md`, bumps those version files, creates a GitHub Release, and tags the release as `vX.Y.Z`.
+
+See [docs/release.md](docs/release.md) for the full release process.
 
 ## Running Tests
 1. Install testing requirements:
@@ -136,4 +161,5 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
 4. Add the following environment variables (which you also put into GitHub Secrets):
    - `TELEGRAM_BOT_TOKEN`
    - `TWELVEDATA_API_KEY` (for `/search` only)
+   - `ALLOWED_CHAT_IDS` (optional comma-separated chat allowlist)
 5. Railway will automatically build and deploy your bot.
