@@ -7,8 +7,10 @@
 
 # Telegram Financial Bot
 
-[![Docker Image](https://ghcr.io/andrewtryder/telegram-stock-price-bot)](https://ghcr.io/andrewtryder/telegram-stock-price-bot)
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/6k39OM?referralCode=cPw57c&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![CI/CD Pipeline](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml)
+[![Docker Image Publish](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/docker-publish.yml)
+[![Docker Registry](https://img.shields.io/badge/docker-GHCR-blue?style=flat&logo=docker&logoColor=white)](https://github.com/andrewtryder/telegram-stock-price-bot/pkgs/container/telegram-stock-price-bot)
+[![License](https://img.shields.io/github/license/andrewtryder/telegram-stock-price-bot)](https://github.com/andrewtryder/telegram-stock-price-bot/blob/main/LICENSE)
 
 A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo Finance), with symbol search powered by the Twelve Data API.
 
