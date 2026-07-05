@@ -52,10 +52,35 @@ Before submitting a PR, make sure all tests pass and that you write tests for an
 
 ## Conventional Commits
 
-Commit messages must follow the [Conventional Commits](https://www.conventionalcommits.org/) format. Example:
+PR titles and commit messages should follow the [Conventional Commits](https://www.conventionalcommits.org/) format. Release Please uses these messages to determine the next semantic version and generate changelog entries.
+
+Examples:
 - `feat: add new /stockinfo command`
 - `fix: resolve escaping issue in HTML parsing`
+- `perf: cache provider responses`
+- `docs: clarify Railway deployment`
 - `chore: update requirements.txt`
+
+Release impact:
+- `fix:` creates a patch release.
+- `feat:` creates a minor release.
+- `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer creates a breaking release.
+
+Accepted PR title types are `feat`, `fix`, `perf`, `docs`, `style`, `refactor`, `test`, `build`, `ci`, `chore`, and `revert`.
+
+## Release Process
+
+Normal contributors do not need to edit version files manually. Release Please manages:
+
+- `CHANGELOG.md`
+- `version.txt`
+- `pyproject.toml`
+- `bot/__init__.py`
+- GitHub Releases and `vX.Y.Z` tags
+
+When enough release-worthy commits land on `main`, Release Please opens or updates a release PR. Maintainers should review the generated changelog and version bump, then merge the release PR to publish the release.
+
+See [docs/release.md](docs/release.md) for the full release workflow.
 
 ## Secret Safety
 
