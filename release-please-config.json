@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "bba6f1443fee4d88aa778c4ce512297e12c676bc",
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "release-type": "simple",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features", "hidden": false },
+    { "type": "fix", "section": "Bug Fixes", "hidden": false },
+    { "type": "perf", "section": "Performance Improvements", "hidden": false },
+    { "type": "refactor", "section": "Code Refactoring", "hidden": false },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "build", "section": "Build System", "hidden": false },
+    { "type": "ci", "section": "Continuous Integration", "hidden": false },
+    { "type": "test", "section": "Tests", "hidden": false },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "telegram-stock-price-bot",
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "bot/__init__.py",
+        {
+          "type": "toml",
+          "path": "pyproject.toml",
+          "jsonpath": "$.project.version"
+        }
+      ]
+    }
+  }
+}
