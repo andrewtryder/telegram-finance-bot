@@ -8,7 +8,7 @@ anyio==4.14.1
     # via httpx
 beautifulsoup4==4.15.0
     # via yfinance
-cachetools==6.2.6
+cachetools==7.1.4
     # via -r requirements.in
 certifi==2026.6.17
     # via
@@ -22,12 +22,12 @@ charset-normalizer==3.4.7
     # via requests
 curl-cffi==0.15.0
     # via yfinance
-frozendict==2.4.7
-    # via yfinance
 h11==0.16.0
     # via httpcore
 httpcore==1.0.9
-    # via httpx
+    # via
+    #   httpx
+    #   python-telegram-bot
 httpx==0.28.1
     # via
     #   -r requirements.in
@@ -63,7 +63,7 @@ python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.2.2
     # via -r requirements.in
-python-telegram-bot==21.11.1
+python-telegram-bot==22.8
     # via -r requirements.in
 pytz==2026.2
     # via yfinance
@@ -81,5 +81,5 @@ urllib3==2.7.0
     # via requests
 websockets==16.0
     # via yfinance
-yfinance==0.2.66
+yfinance==1.5.1
     # via -r requirements.in
