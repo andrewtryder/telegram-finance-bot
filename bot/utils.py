@@ -30,8 +30,8 @@ def command_guard(func):
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
 
-        # 1. Enforce allowlist if set
-        if ALLOWED_CHAT_IDS:
+        # 1. Enforce allowlist if set (unless 0 is in the allowlist, meaning anyone can talk to the bot)
+        if ALLOWED_CHAT_IDS and 0 not in ALLOWED_CHAT_IDS:
             if chat_id not in ALLOWED_CHAT_IDS:
                 logger.warning(f"Unauthorized chat attempt: Chat ID {chat_id}")
                 if update.message:
