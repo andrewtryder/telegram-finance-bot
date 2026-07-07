@@ -27,7 +27,7 @@ ALLOWED_CHAT_IDS = set()
 ALLOWED_CHAT_IDS_ENV = os.getenv("ALLOWED_CHAT_IDS")
 if ALLOWED_CHAT_IDS_ENV:
     for cid in ALLOWED_CHAT_IDS_ENV.split(","):
-        cid = cid.strip()
+        cid = cid.strip().strip("'\"")
         if cid:
             try:
                 ALLOWED_CHAT_IDS.add(int(cid))

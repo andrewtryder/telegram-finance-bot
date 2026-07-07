@@ -56,7 +56,7 @@ To run this bot locally or in production, you will need:
 
 3. **Allowed Chat IDs** (optional):
    - Set `ALLOWED_CHAT_IDS` to a comma-separated list of allowed Telegram user or group IDs (e.g., `12345678,-10012345678`) to restrict bot access.
-   - If not set, the bot responds to all incoming commands.
+   - If not set, or if set to `0` (used to explicitly allow public access), anyone can talk with the bot.
 
 ## Docker
 
@@ -122,7 +122,7 @@ docker run --env-file .env telegram-stock-price-bot
    ```bash
    cp .env.example .env
    ```
-   Open `.env` and replace the placeholder text with your actual keys. `ALLOWED_CHAT_IDS` can be left empty for public use.
+   Open `.env` and replace the placeholder text with your actual keys. `ALLOWED_CHAT_IDS` can be left empty or set to `0` for public use (anyone can talk with the bot).
 5. Run the bot:
    ```bash
    python -m bot.main
@@ -162,5 +162,5 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
 4. Add the following environment variables (which you also put into GitHub Secrets):
    - `TELEGRAM_BOT_TOKEN`
    - `TWELVEDATA_API_KEY` (for `/search` only)
-   - `ALLOWED_CHAT_IDS` (optional, to restrict bot access to specific chat IDs)
+   - `ALLOWED_CHAT_IDS` (optional, to restrict bot access to specific chat IDs. Set to `0` or leave empty to allow anyone to talk with the bot)
 5. Railway will automatically build and deploy your bot.
