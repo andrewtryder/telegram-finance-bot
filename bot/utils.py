@@ -101,6 +101,51 @@ def _format_large_number(num: float) -> str:
         return "N/A"
 
 
+def _format_plain_number(num: float | int | str | None) -> str:
+    if num is None:
+        return "N/A"
+    try:
+        value = float(num)
+        abs_value = abs(value)
+        if abs_value >= 1_000_000_000_000:
+            return f"{value / 1_000_000_000_000:.2f}T"
+        if abs_value >= 1_000_000_000:
+            return f"{value / 1_000_000_000:.2f}B"
+        if abs_value >= 1_000_000:
+            return f"{value / 1_000_000:.2f}M"
+        if value.is_integer():
+            return f"{value:,.0f}"
+        return f"{value:,.2f}"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def _format_money(num: float | int | str | None, currency: str | None = "USD", decimals: int | None = None) -> str:
+    if num is None:
+        return "N/A"
+    try:
+        value = float(num)
+        if decimals is None:
+            decimals = 6 if abs(value) < 1 else 2
+        currency_code = (currency or "USD").upper()
+        prefix = "$" if currency_code == "USD" else f"{currency_code} "
+        return f"{prefix}{value:,.{decimals}f}"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def _format_percentage(value: float | int | str | None, *, already_percent: bool = False) -> str:
+    if value is None:
+        return "N/A"
+    try:
+        number = float(value)
+        if not already_percent:
+            number *= 100
+        return f"{number:.2f}%"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
 def _truncate_text(text: str, max_length: int = 400) -> str:
     if not text:
         return "N/A"
