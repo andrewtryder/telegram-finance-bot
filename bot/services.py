@@ -112,8 +112,25 @@ async def _get_yfinance_news(symbol: str) -> list:
         return []
 
 
+def _first_present(info: dict, *keys: str):
+    for key in keys:
+        value = info.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _to_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None) -> str:
-    from .utils import _format_market_time
+    from .utils import _format_large_number, _format_market_time, _format_money, _format_plain_number
 
     display_symbol = display_symbol or yfinance_symbol
     try:
@@ -122,36 +139,82 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
         if not info:
             return f"Could not find data for <b>{escaped_display}</b>."
 
-        price = info.get("regularMarketPrice") or info.get("currentPrice")
-        if price is None:
+        price = _first_present(info, "regularMarketPrice", "currentPrice")
+        price_num = _to_float(price)
+        if price_num is None:
             return f"Could not fetch current price for <b>{escaped_display}</b>."
 
         name = info.get("shortName") or info.get("longName") or display_symbol
         escaped_name = html.escape(name)
+        currency = info.get("financialCurrency") or info.get("currency") or "USD"
 
-        prev_close = info.get("previousClose")
-        if prev_close is not None and prev_close != 0:
-            change = price - prev_close
-            change_pct = (change / prev_close) * 100
+        prev_close = _first_present(info, "previousClose", "regularMarketPreviousClose")
+        prev_close_num = _to_float(prev_close)
+        if prev_close_num not in (None, 0):
+            change = price_num - prev_close_num
+            change_pct = (change / prev_close_num) * 100
         else:
-            change = 0.0
-            change_pct = 0.0
+            change = _to_float(info.get("regularMarketChange")) or 0.0
+            change_pct = _to_float(info.get("regularMarketChangePercent")) or 0.0
 
-        market_time = _format_market_time(info)
-        escaped_time = html.escape(market_time)
-        time_str = f" (As of {escaped_time})" if market_time else ""
-
-        sign = "+" if change >= 0 else ""
+        sign = "+" if change >= 0 else "-"
         lines = [
             f"📈 <b>{escaped_name} ({escaped_display})</b>",
-            f"<b>Price:</b> ${price:,.2f}{time_str}",
-            f"<b>Change:</b> {sign}${change:,.2f} ({sign}{change_pct:.2f}%)",
+            f"<b>Price:</b> {html.escape(_format_money(price_num, currency))}",
+            f"<b>Change:</b> {sign}{html.escape(_format_money(abs(change), currency))} ({sign}{abs(change_pct):.2f}%)",
         ]
 
-        if "regularMarketDayHigh" in info and "regularMarketDayLow" in info:
-            high = info["regularMarketDayHigh"]
-            low = info["regularMarketDayLow"]
-            lines.append(f"<b>Day Range:</b> ${low:,.2f} - ${high:,.2f}")
+        open_price = _first_present(info, "regularMarketOpen", "open")
+        if prev_close is not None or open_price is not None:
+            lines.append(
+                "<b>Previous Close / Open:</b> "
+                f"{html.escape(_format_money(prev_close, currency))} / "
+                f"{html.escape(_format_money(open_price, currency))}"
+            )
+
+        day_low = _first_present(info, "regularMarketDayLow", "dayLow")
+        day_high = _first_present(info, "regularMarketDayHigh", "dayHigh")
+        if day_low is not None or day_high is not None:
+            lines.append(
+                "<b>Day Range:</b> "
+                f"{html.escape(_format_money(day_low, currency))} - {html.escape(_format_money(day_high, currency))}"
+            )
+
+        low52 = info.get("fiftyTwoWeekLow")
+        high52 = info.get("fiftyTwoWeekHigh")
+        if low52 is not None or high52 is not None:
+            lines.append(
+                "<b>52W Range:</b> "
+                f"{html.escape(_format_money(low52, currency))} - {html.escape(_format_money(high52, currency))}"
+            )
+
+        volume = _first_present(info, "regularMarketVolume", "volume")
+        average_volume = _first_present(info, "averageVolume", "averageDailyVolume10Day")
+        if volume is not None or average_volume is not None:
+            lines.append(
+                "<b>Volume / Avg Volume:</b> "
+                f"{html.escape(_format_plain_number(volume))} / {html.escape(_format_plain_number(average_volume))}"
+            )
+
+        market_cap = info.get("marketCap")
+        if market_cap is not None:
+            lines.append(f"<b>Market Cap:</b> {html.escape(_format_large_number(market_cap))}")
+
+        exchange = info.get("fullExchangeName") or info.get("exchange")
+        market_state = info.get("marketState")
+        meta_parts = []
+        if exchange:
+            meta_parts.append(html.escape(str(exchange)))
+        if currency:
+            meta_parts.append(html.escape(str(currency).upper()))
+        if market_state:
+            meta_parts.append(html.escape(str(market_state)))
+        if meta_parts:
+            lines.append(f"<b>Exchange / Currency / State:</b> {' / '.join(meta_parts)}")
+
+        market_time = _format_market_time(info)
+        if market_time:
+            lines.append(f"<b>As of:</b> {html.escape(market_time)}")
 
         return "\n".join(lines)
 
