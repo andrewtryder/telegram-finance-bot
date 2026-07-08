@@ -36,5 +36,5 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     yfinance_symbol = to_yfinance_crypto(symbol)
     display_sym = crypto_display_symbol(symbol)
 
-    text = await get_quote_formatted(yfinance_symbol, display_symbol=display_sym)
+    text = await get_quote_formatted(yfinance_symbol, display_symbol=display_sym, is_crypto=True)
     await update.message.reply_text(text, parse_mode="HTML")

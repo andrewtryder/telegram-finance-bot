@@ -49,7 +49,7 @@ async def test_crypto_command_with_args_no_usd(mock_get_quote, mock_update, mock
 
     await crypto(mock_update, mock_context)
 
-    mock_get_quote.assert_called_once_with("BTC-USD", display_symbol="BTC/USD")
+    mock_get_quote.assert_called_once_with("BTC-USD", display_symbol="BTC/USD", is_crypto=True)
     assert mock_update.message.reply_text.call_count == 1
     mock_update.message.reply_text.assert_any_call("The current price of BTC/USD is $50000.0", parse_mode="HTML")
 
