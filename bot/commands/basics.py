@@ -1,5 +1,3 @@
-import html
-
 from telegram import (
     BotCommand,
     BotCommandScopeAllGroupChats,
@@ -13,40 +11,24 @@ from telegram.ext import Application, ContextTypes
 
 from bot.config import logger
 
+from .options import get_all_commands_help_text
+
 
 def get_help_text(first_name: str = "there") -> str:
-    escaped_name = html.escape(first_name)
-    lines = [
-        f"Hello {escaped_name}! I am your Financial Market Bot 📈",
-        "",
-        "Here are the commands you can use:",
-        "📊 <b>/stock &lt;ticker&gt;</b> - Get the current price of a stock",
-        "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Get detailed company info",
-        "📰 <b>/stocknews &lt;ticker&gt;</b> - Get latest news for a stock",
-        "💰 <b>/marketcap &lt;ticker&gt;</b> - Get the market cap of a stock",
-        "🪙 <b>/crypto &lt;symbol&gt;</b> - Get the current price of a cryptocurrency",
-        "📈 <b>/indices</b> - Get current levels of major market indices",
-        "🔍 <b>/search &lt;query&gt;</b> - Search for a symbol",
-        "",
-        "Examples: /stock AAPL, /crypto BTC",
-        "",
-        "⚠️ <i>Disclaimer: Data is for informational purposes only, "
-        "may be delayed, and does not constitute financial advice.</i>",
-    ]
-    return "\n".join(lines)
+    return get_all_commands_help_text(first_name)
 
 
 async def setup_commands(application: Application) -> None:
     commands = [
         BotCommand("start", "Show welcome message and help"),
-        BotCommand("help", "Show available commands"),
-        BotCommand("stock", "Get stock price (e.g., /stock AAPL)"),
-        BotCommand("crypto", "Get crypto price (e.g., /crypto BTC)"),
-        BotCommand("stockinfo", "Get company info (e.g., /stockinfo AAPL)"),
-        BotCommand("stocknews", "Get latest news (e.g., /stocknews AAPL)"),
-        BotCommand("marketcap", "Get market cap (e.g., /marketcap AAPL)"),
+        BotCommand("help", "Show commands, examples, and options"),
+        BotCommand("stock", "Get a detailed stock quote"),
+        BotCommand("crypto", "Get a detailed crypto quote"),
+        BotCommand("stockinfo", "Get company profile and fundamentals"),
+        BotCommand("stocknews", "Get recent stock news"),
+        BotCommand("marketcap", "Get valuation details"),
         BotCommand("indices", "Get major market indices"),
-        BotCommand("search", "Search for a symbol (e.g., /search Apple)"),
+        BotCommand("search", "Search for a market symbol"),
     ]
     await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
     await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
@@ -56,16 +38,28 @@ async def _ignore_non_command_group_messages(update: Update, context: ContextTyp
     pass
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"/start or /help commanded by {update.effective_user.first_name}")
-    help_text = get_help_text(update.effective_user.first_name)
+async def _reply_with_help(update: Update, first_name: str) -> None:
+    help_text = get_help_text(first_name)
 
     if update.effective_chat.type == ChatType.PRIVATE:
         keyboard = [
             [KeyboardButton("/stock AAPL"), KeyboardButton("/crypto BTC")],
-            [KeyboardButton("/indices"), KeyboardButton("/help")],
+            [KeyboardButton("/indices"), KeyboardButton("/stock --getopts")],
+            [KeyboardButton("/search Apple"), KeyboardButton("/help")],
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode="HTML")
     else:
         await update.message.reply_text(help_text, parse_mode="HTML")
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    first_name = update.effective_user.first_name if update.effective_user else "there"
+    logger.info(f"/start commanded by {first_name}")
+    await _reply_with_help(update, first_name)
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    first_name = update.effective_user.first_name if update.effective_user else "there"
+    logger.info(f"/help commanded by {first_name}")
+    await _reply_with_help(update, first_name)
