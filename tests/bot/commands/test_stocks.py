@@ -49,7 +49,7 @@ async def test_stock_command_with_args(mock_get_quote, mock_update, mock_context
 
     await main.stock(mock_update, mock_context)
 
-    mock_get_quote.assert_called_once_with("AAPL", display_symbol="AAPL")
+    mock_get_quote.assert_called_once_with("AAPL", display_symbol="AAPL", is_crypto=False)
     assert mock_update.message.reply_text.call_count == 1
     mock_update.message.reply_text.assert_any_call("The current price of AAPL is $150.5", parse_mode="HTML")
 

@@ -76,3 +76,12 @@ async def test_ignore_non_command_group_messages(mock_update, mock_context):
     mock_update.effective_chat.id = 999
     await main._ignore_non_command_group_messages(mock_update, mock_context)
     mock_update.message.reply_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_start_command_with_specific_help(mock_update, mock_context):
+    mock_context.args = ["stock"]
+    await main.start(mock_update, mock_context)
+    mock_update.message.reply_text.assert_called_once()
+    args, kwargs = mock_update.message.reply_text.call_args
+    assert "Shows a quote snapshot" in args[0]

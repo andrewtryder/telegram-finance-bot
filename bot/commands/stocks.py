@@ -44,7 +44,7 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     yfinance_symbol = to_yfinance_stock(ticker)
 
-    text = await get_quote_formatted(yfinance_symbol, display_symbol=ticker.upper())
+    text = await get_quote_formatted(yfinance_symbol, display_symbol=ticker.upper(), is_crypto=False)
     await update.message.reply_text(text, parse_mode="HTML")
 
 
@@ -91,10 +91,10 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         div_yield = info.get("dividendYield")
         div_str = f"{div_yield * 100:.2f}%" if isinstance(div_yield, (int, float)) else "N/A"
 
-        high52 = info.get("fiftyTwoWeekHigh")
+        high52 = info.get("yearHigh") or info.get("fiftyTwoWeekHigh")
         high52_str = f"${high52:,.2f}" if isinstance(high52, (int, float)) else "N/A"
 
-        low52 = info.get("fiftyTwoWeekLow")
+        low52 = info.get("yearLow") or info.get("fiftyTwoWeekLow")
         low52_str = f"${low52:,.2f}" if isinstance(low52, (int, float)) else "N/A"
 
         summary = _truncate_text(info.get("longBusinessSummary") or info.get("description") or "No summary available.")
