@@ -11,6 +11,8 @@ from bot.symbols import (
 )
 from bot.utils import command_guard, send_action
 
+from .options import get_command_options_text, strip_getopts, wants_getopts
+
 
 @command_guard
 @send_action(ChatAction.TYPING)
@@ -18,14 +20,20 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
-    if not context.args:
+    if wants_getopts(context.args):
+        await update.message.reply_text(get_command_options_text("crypto"), parse_mode="HTML")
+        return
+
+    args = strip_getopts(context.args)
+    if not args:
         await update.message.reply_text(
-            "Please provide a crypto symbol. Example: <code>/crypto BTC</code>",
+            "Please provide a crypto symbol. Example: <code>/crypto BTC</code>\n"
+            "Use <code>/crypto --getopts</code> for command details.",
             parse_mode="HTML",
         )
         return
 
-    symbol = context.args[0]
+    symbol = args[0]
     if not validate_crypto_symbol(symbol):
         await update.message.reply_text(
             "Invalid crypto symbol format. Example: <code>BTC</code>, <code>BTC/USD</code>, or <code>ETH-USD</code>.",
