@@ -8,6 +8,8 @@ from bot.config import MAX_SEARCH_LEN, TWELVEDATA_API_KEY, logger
 from bot.services import fetch_with_cache
 from bot.utils import command_guard, send_action
 
+from .options import get_command_options_text, strip_getopts, wants_getopts
+
 
 @command_guard
 @send_action(ChatAction.TYPING)
@@ -16,21 +18,26 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = update.message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
-    if not context.args:
+    if wants_getopts(context.args):
+        await update.message.reply_text(get_command_options_text("search"), parse_mode="HTML")
+        return
+
+    args = strip_getopts(context.args)
+    if not args:
         await update.message.reply_text(
-            "Please provide a search term. Example: <code>/search Vanguard</code>",
+            "Please provide a search term. Example: <code>/search Vanguard</code>\n"
+            "Use <code>/search --getopts</code> for command details.",
             parse_mode="HTML",
         )
         return
 
-    query = " ".join(context.args)
+    query = " ".join(args)
     if len(query) > MAX_SEARCH_LEN:
         await update.message.reply_text(
             f"Search query is too long. Maximum length is {MAX_SEARCH_LEN} characters.",
             parse_mode="HTML",
         )
         return
-
     if not TWELVEDATA_API_KEY:
         await update.message.reply_text("Error: Twelve Data API Key is not configured.")
         return
@@ -53,12 +60,17 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 name = item.get("instrument_name", "N/A")
                 exch = item.get("exchange", "N/A")
                 type_ = item.get("instrument_type", "N/A")
+                country = item.get("country", "N/A")
+                currency = item.get("currency", "N/A")
 
                 escaped_sym = html.escape(sym)
                 escaped_name = html.escape(name)
                 escaped_exch = html.escape(exch)
                 escaped_type = html.escape(type_)
-                text += f"• <b>{escaped_sym}</b> - {escaped_name} ({escaped_exch}, {escaped_type})\n"
+                escaped_country = html.escape(country)
+                escaped_currency = html.escape(currency)
+                text += f"• <b>{escaped_sym}</b> - {escaped_name}\n"
+                text += f"  <i>{escaped_exch} • {escaped_type} • {escaped_country} • {escaped_currency}</i>\n"
 
             await update.message.reply_text(text, parse_mode="HTML")
         else:
