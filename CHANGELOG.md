@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.3.0](https://github.com/andrewtryder/telegram-stock-price-bot/compare/telegram-stock-price-bot-v0.2.0...telegram-stock-price-bot-v0.3.0) (2026-07-08)
+
+
+### Features
+
+* implement rich quote cards and contextual help ([3373a04](https://github.com/andrewtryder/telegram-stock-price-bot/commit/3373a04e0f33fe5a75e88e0d7867b17866aaa129))
+* implement rich quote cards and contextual help ([f5fba94](https://github.com/andrewtryder/telegram-stock-price-bot/commit/f5fba94be04642d876704016cade255ee3ac5831))
+
 ## [0.2.0](https://github.com/andrewtryder/telegram-stock-price-bot/compare/telegram-stock-price-bot-v0.1.0...telegram-stock-price-bot-v0.2.0) (2026-07-07)
 
 
