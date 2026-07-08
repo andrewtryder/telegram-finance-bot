@@ -10,6 +10,7 @@ from telegram.ext import (
 from bot.commands import (
     _ignore_non_command_group_messages,
     crypto,
+    help_command,
     indices,
     marketcap,
     search,
@@ -57,7 +58,7 @@ def main():
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stock", stock))
     application.add_handler(CommandHandler("crypto", crypto))
     application.add_handler(CommandHandler("search", search))
