@@ -1,7 +1,15 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, Chat, Message, Update, User
+from telegram import (
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats,
+    Chat,
+    Message,
+    ReplyKeyboardRemove,
+    Update,
+    User,
+)
 from telegram.constants import ChatType
 from telegram.ext import Application, ContextTypes
 
@@ -37,7 +45,7 @@ async def test_start_command(mock_update, mock_context):
     args, kwargs = mock_update.message.reply_text.call_args
     assert "Hello TestUser!" in args[0]
     assert "/stock" in args[0]
-    assert "reply_markup" in kwargs
+    assert isinstance(kwargs.get("reply_markup"), ReplyKeyboardRemove)
     assert kwargs.get("parse_mode") == "HTML"
 
 
@@ -63,10 +71,10 @@ async def test_help_or_start_command_group_no_keyboard(mock_update, mock_context
 async def test_setup_commands():
     application = MagicMock(spec=Application)
     application.bot = MagicMock()
-    application.bot.set_my_commands = AsyncMock()
+    application.bot.delete_my_commands = AsyncMock()
     await main.setup_commands(application)
-    assert application.bot.set_my_commands.call_count == 2
-    private_call, group_call = application.bot.set_my_commands.call_args_list
+    assert application.bot.delete_my_commands.call_count == 3
+    private_call, group_call, default_call = application.bot.delete_my_commands.call_args_list
     assert isinstance(private_call.kwargs["scope"], BotCommandScopeAllPrivateChats)
     assert isinstance(group_call.kwargs["scope"], BotCommandScopeAllGroupChats)
 

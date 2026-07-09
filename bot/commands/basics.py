@@ -1,11 +1,9 @@
 import html
 
 from telegram import (
-    BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     Update,
 )
 from telegram.constants import ChatType
@@ -108,19 +106,9 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
 
 
 async def setup_commands(application: Application) -> None:
-    commands = [
-        BotCommand("start", "Show welcome message and help"),
-        BotCommand("help", "Show available commands"),
-        BotCommand("stock", "Get stock price (e.g., /stock AAPL)"),
-        BotCommand("crypto", "Get crypto price (e.g., /crypto BTC)"),
-        BotCommand("stockinfo", "Get company info (e.g., /stockinfo AAPL)"),
-        BotCommand("stocknews", "Get latest news (e.g., /stocknews AAPL)"),
-        BotCommand("marketcap", "Get market cap (e.g., /marketcap AAPL)"),
-        BotCommand("indices", "Get major market indices"),
-        BotCommand("search", "Search for a symbol (e.g., /search Apple)"),
-    ]
-    await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-    await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+    await application.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+    await application.bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
+    await application.bot.delete_my_commands()
 
 
 async def _ignore_non_command_group_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,11 +125,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = get_help_text(update.effective_user.first_name, specific_command)
 
     if update.effective_chat.type == ChatType.PRIVATE:
-        keyboard = [
-            [KeyboardButton("/stock AAPL"), KeyboardButton("/crypto BTC")],
-            [KeyboardButton("/indices"), KeyboardButton("/help")],
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode="HTML")
+        await update.message.reply_text(help_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
     else:
         await update.message.reply_text(help_text, parse_mode="HTML")
