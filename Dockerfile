@@ -19,6 +19,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Fonts for matplotlib charts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy compiled wheels from builder
 COPY --from=builder /app/wheels /app/wheels
 
@@ -29,10 +34,12 @@ RUN pip install --no-cache-dir --no-index --find-links=/app/wheels /app/wheels/*
 # Copy application source
 COPY bot/ ./bot/
 
-# Create a non-root user and switch to it
-RUN adduser --disabled-password --gecos "" botuser
+# Persistent data directory for SQLite (mount a Railway volume here)
+RUN mkdir -p /app/data && adduser --disabled-password --gecos "" botuser \
+    && chown -R botuser:botuser /app
 USER botuser
+
+ENV DATA_DIR=/app/data
 
 # Default entrypoint
 CMD ["python", "-m", "bot.main"]
-

@@ -4,6 +4,7 @@ import random
 import time
 from functools import wraps
 
+from cachetools import TTLCache
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,9 +12,9 @@ from bot.config import ALLOWED_CHAT_IDS
 
 logger = logging.getLogger(__name__)
 
-# Cooldown state
-USER_COOLDOWNS = {}
+# Cooldown state (auto-expires; caps memory for long-running polling)
 COOLDOWN_SECONDS = 2.0
+USER_COOLDOWNS = TTLCache(maxsize=10_000, ttl=COOLDOWN_SECONDS)
 
 
 def command_guard(func):
@@ -24,7 +25,10 @@ def command_guard(func):
 
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        from bot.metrics import record_command
+
         if not update.effective_chat or not update.effective_user:
+            record_command(func.__name__)
             return await func(update, context, *args, **kwargs)
 
         chat_id = update.effective_chat.id
@@ -50,6 +54,7 @@ def command_guard(func):
                     return
             USER_COOLDOWNS[key] = now
 
+        record_command(func.__name__)
         return await func(update, context, *args, **kwargs)
 
     return wrapper

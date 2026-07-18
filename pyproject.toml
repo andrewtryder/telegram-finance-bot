@@ -3,13 +3,13 @@ name = "telegram-stock-price-bot"
 version = "0.3.0"
 description = "A Telegram bot for stock, crypto, and market index lookups."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Andrew Ryder" }]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

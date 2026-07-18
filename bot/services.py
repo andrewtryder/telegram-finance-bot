@@ -173,6 +173,114 @@ def _format_volume(vol) -> str:
         return "N/A"
 
 
+def _format_extended_hours(info: dict) -> str | None:
+    """Compact pre/post-market line when Yahoo exposes extended-session prices."""
+    from .utils import _trend_arrow
+
+    state = str(info.get("marketState") or "").upper()
+    pre_price = info.get("preMarketPrice")
+    post_price = info.get("postMarketPrice")
+
+    if state == "PRE" or (pre_price is not None and state not in ("REGULAR", "CLOSED", "POST")):
+        price = pre_price
+        change = info.get("preMarketChange", 0.0) or 0.0
+        change_pct = info.get("preMarketChangePercent", 0.0) or 0.0
+        label = "Pre"
+        icon = "🌅"
+    elif state == "POST" or (post_price is not None and state != "REGULAR"):
+        price = post_price
+        change = info.get("postMarketChange", 0.0) or 0.0
+        change_pct = info.get("postMarketChangePercent", 0.0) or 0.0
+        label = "Post"
+        icon = "🌙"
+    elif pre_price is not None and state not in ("REGULAR",):
+        price = pre_price
+        change = info.get("preMarketChange", 0.0) or 0.0
+        change_pct = info.get("preMarketChangePercent", 0.0) or 0.0
+        label = "Pre"
+        icon = "🌅"
+    elif post_price is not None:
+        price = post_price
+        change = info.get("postMarketChange", 0.0) or 0.0
+        change_pct = info.get("postMarketChangePercent", 0.0) or 0.0
+        label = "Post"
+        icon = "🌙"
+    else:
+        return None
+
+    if price is None:
+        return None
+
+    sign = "+" if change >= 0 else ""
+    arrow = _trend_arrow(change)
+    return (
+        f"{icon} <b>{label}:</b> {_format_price(price, False)}  "
+        f"{arrow} {sign}{_format_price(change, False)} ({sign}{change_pct:.2f}%)"
+    )
+
+
+def format_compact_quote(info: dict, display_symbol: str) -> str:
+    """One-line quote for compare / watchlist."""
+    from .utils import _trend_arrow
+
+    escaped = html.escape(display_symbol.upper())
+    if not info:
+        return f"<b>{escaped}</b>: Data unavailable"
+
+    price = info.get("lastPrice") or info.get("regularMarketPrice") or info.get("currentPrice")
+    if price is None:
+        return f"<b>{escaped}</b>: Data unavailable"
+
+    prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+    if prev_close is not None and prev_close != 0:
+        change = price - prev_close
+        change_pct = (change / prev_close) * 100
+    else:
+        change = info.get("regularMarketChange", 0.0) or 0.0
+        change_pct = info.get("regularMarketChangePercent", 0.0) or 0.0
+
+    sign = "+" if change >= 0 else ""
+    arrow = _trend_arrow(change)
+    return f"<b>{escaped}</b>: {_format_price(price, False)}  {arrow} {sign}{change:,.2f} ({sign}{change_pct:.2f}%)"
+
+
+async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> bytes | None:
+    """Render a simple closing-price line chart as PNG bytes."""
+    import asyncio
+    from io import BytesIO
+
+    def _render() -> bytes | None:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import yfinance as yf
+
+        hist = yf.Ticker(yfinance_symbol).history(period=period, interval="1d")
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None
+
+        fig, ax = plt.subplots(figsize=(8, 4), dpi=120)
+        ax.plot(hist.index, hist["Close"], color="#2563eb", linewidth=1.5)
+        ax.set_title(f"{yfinance_symbol.upper()} ({period})")
+        ax.set_ylabel("Close")
+        ax.grid(True, alpha=0.3)
+        fig.autofmt_xdate()
+        fig.tight_layout()
+
+        buf = BytesIO()
+        fig.savefig(buf, format="png")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.read()
+
+    try:
+        return await asyncio.to_thread(_render)
+    except Exception as e:
+        logger.error(f"Error rendering chart for {yfinance_symbol}: {e}")
+        return None
+
+
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None, is_crypto: bool = False) -> str:
     from .utils import DIVIDER, _format_large_number, _format_market_time, _trend_arrow
 
@@ -217,6 +325,10 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
         )
 
         if not is_crypto:
+            extended = _format_extended_hours(info)
+            if extended:
+                lines.append(extended)
+
             open_close_bits = []
             if prev_close:
                 open_close_bits.append(f"Prev Close {_format_price(prev_close, False)}")

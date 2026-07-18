@@ -22,15 +22,21 @@ A Telegram bot that fetches stock, crypto, and index prices via yfinance (Yahoo 
 ## Features
 
 - `/start` - Displays a welcome message and lists available commands.
-- `/stock <ticker>` - Fetches the current price of a stock (e.g., `/stock AAPL`).
+- `/stock <ticker>` - Fetches the current price of a stock (e.g., `/stock AAPL`), including pre/post-market when available.
 - `/stockinfo <ticker>` - Fetches company information such as sector, industry, P/E ratio, dividend yield, and 52-week range (e.g., `/stockinfo AAPL`).
 - `/stocknews <ticker>` - Fetches recent news headlines for a stock (e.g., `/stocknews AAPL`).
 - `/marketcap <ticker>` - Fetches a company's market capitalization (e.g., `/marketcap AAPL`).
+- `/compare <t1> <t2> [t3] [t4]` - Compares 2–4 stock quotes side by side.
+- `/watchlist` / `/watchlist add|remove <ticker>` - Per-chat watchlist with compact quotes (max 10).
+- `/chart <ticker> [1mo|3mo|6mo|1y]` - Renders a closing-price line chart PNG.
+- `/alert add|list|remove` - One-shot price alerts (checked every 60s).
 - `/crypto <symbol>` - Fetches the current price of a cryptocurrency (e.g., `/crypto BTC` or `/crypto ETH`).
 - `/indices` - Fetches current levels of major market indices (S&P 500, Dow Jones, Nasdaq Composite).
 - `/search <query>` - Search for a symbol via Twelve Data (e.g., `/search Apple`).
 
 On startup, the bot removes any registered command menu button (`deleteMyCommands`) across private chats and groups so no menu bar appears in chats or channels.
+
+**Requires Python 3.12+.**
 
 ## Group Chats
 
@@ -109,9 +115,9 @@ docker run --env-file .env telegram-stock-price-bot
 ## Local Setup
 
 1. Clone this repository.
-2. Create a virtual environment and activate it:
+2. Create a virtual environment with **Python 3.12+** and activate it:
    ```bash
-   python3 -m venv venv
+   python3.12 -m venv venv
    source venv/bin/activate
    ```
 3. Install dependencies:
@@ -122,7 +128,7 @@ docker run --env-file .env telegram-stock-price-bot
    ```bash
    cp .env.example .env
    ```
-   Open `.env` and replace the placeholder text with your actual keys. `ALLOWED_CHAT_IDS` can be left empty or set to `0` for public use (anyone can talk with the bot).
+   Open `.env` and replace the placeholder text with your actual keys. `ALLOWED_CHAT_IDS` can be left empty or set to `0` for public use (anyone can talk with the bot). Set `DATA_DIR` for SQLite watchlists/alerts (default `./data`).
 5. Run the bot:
    ```bash
    python -m bot.main
@@ -164,4 +170,5 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
    - `TWELVEDATA_API_KEY` (for `/search` only)
    - `HONEYBADGER_API_KEY` (optional; enables Honeybadger error reporting)
    - `ALLOWED_CHAT_IDS` (optional, to restrict bot access to specific chat IDs. Set to `0` or leave empty to allow anyone to talk with the bot)
+   - `DATA_DIR` (optional; defaults to `/app/data` in Docker — mount a Railway volume on this path so watchlists/alerts survive redeploys)
 5. Railway will automatically build and deploy your bot.

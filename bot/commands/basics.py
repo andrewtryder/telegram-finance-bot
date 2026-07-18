@@ -34,7 +34,8 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "  • 52-week/year range\n"
             "  • Volume and average volume\n"
             "  • Market cap\n"
-            "  • Exchange, currency, and quote timestamp\n\n"
+            "  • Exchange, currency, and quote timestamp\n"
+            "  • Pre/post-market price when available\n\n"
             "Data sources:\n"
             "  • fast_info for current quote fields where available\n"
             '  • history(period="5d") for week range\n'
@@ -85,6 +86,24 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         return "<b>/marketcap &lt;ticker&gt;</b>\nFetches the current market capitalization of a company."
     elif specific_command == "search":
         return "<b>/search &lt;query&gt;</b>\nSearches the Twelve Data API for a given company name or symbol."
+    elif specific_command == "compare":
+        return "<b>/compare &lt;t1&gt; &lt;t2&gt; [t3] [t4]</b>\nCompares 2–4 stock quotes side by side."
+    elif specific_command == "watchlist":
+        return (
+            "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
+            "Per-chat watchlist (max 10). Bare /watchlist shows compact quotes."
+        )
+    elif specific_command == "chart":
+        return (
+            "<b>/chart &lt;ticker&gt; [1mo|3mo|6mo|1y]</b>\n"
+            "Renders a closing-price line chart as a PNG (default period: 1mo)."
+        )
+    elif specific_command == "alert":
+        return (
+            "<b>/alert add &lt;ticker&gt; above|below &lt;price&gt;</b>\n"
+            "<b>/alert list</b> · <b>/alert remove &lt;id&gt;</b>\n"
+            "One-shot price alerts (max 20 per chat)."
+        )
 
     lines = [
         f"👋 Hello {escaped_name}! I am your Financial Market Bot 📈",
@@ -95,6 +114,10 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Detailed company info",
         "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
         "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
+        "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
+        "👀 <b>/watchlist</b> - Per-chat watchlist",
+        "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
+        "🔔 <b>/alert</b> - One-shot price alerts",
         "",
         "🪙 <b>Crypto &amp; Markets</b>",
         "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",

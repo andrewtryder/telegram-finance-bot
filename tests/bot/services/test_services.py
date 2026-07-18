@@ -57,6 +57,8 @@ async def test_get_quote_formatted_exception(mock_to_thread):
 async def test_fetch_with_cache_redacts_secrets(mock_http_client, caplog):
     mock_response = MagicMock()
     mock_response.json.return_value = {"data": []}
+    mock_response.raise_for_status = MagicMock()
+    mock_http_client.is_closed = False
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
     with caplog.at_level(logging.INFO):
@@ -68,6 +70,7 @@ async def test_fetch_with_cache_redacts_secrets(mock_http_client, caplog):
             assert "secret_key_123" not in record.message
             assert "apikey=" not in record.message
 
+    mock_http_client.get.assert_awaited_once()
     cache_keys = list(main.API_CACHE.keys())
     assert len(cache_keys) == 1
     safe_key = cache_keys[0]

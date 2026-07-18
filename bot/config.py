@@ -1,19 +1,50 @@
+import json
 import logging
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Log level config
+
+class JsonFormatter(logging.Formatter):
+    """Emit one JSON object per log line for Railway-friendly structured logs."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def _configure_logging() -> logging.Logger:
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    log_format_env = os.getenv("LOG_FORMAT", "").lower().strip()
+    use_json = log_format_env == "json" or (not log_format_env and bool(os.getenv("RAILWAY_ENVIRONMENT")))
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(level)
+    handler = logging.StreamHandler()
+    if use_json:
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    root.addHandler(handler)
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    return logging.getLogger("bot")
+
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-)
-logger = logging.getLogger("bot")
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = _configure_logging()
 
 # Constants
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -23,6 +54,7 @@ HONEYBADGER_ENVIRONMENT = os.getenv("HONEYBADGER_ENVIRONMENT") or os.getenv("RAI
 PROVIDER_TIMEOUT = float(os.getenv("PROVIDER_TIMEOUT", "10.0"))
 INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", "0.5"))
 MAX_SEARCH_LEN = 64
+DATA_DIR = os.getenv("DATA_DIR", "./data")
 
 # Parse ALLOWED_CHAT_IDS
 ALLOWED_CHAT_IDS = set()
