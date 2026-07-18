@@ -19,7 +19,7 @@ from bot.commands import (
     stockinfo,
     stocknews,
 )
-from bot.config import TELEGRAM_BOT_TOKEN, logger
+from bot.config import TELEGRAM_BOT_TOKEN, init_honeybadger, logger, notify_honeybadger
 from bot.services import close_http_client, init_http_client
 
 # Optional: Only ignore text/commands in groups if you didn't enable Privacy Mode
@@ -29,6 +29,19 @@ GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Reg
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log unexpected exceptions and reply with a generic safe message."""
     logger.exception("Exception occurred while handling an update:", exc_info=context.error)
+
+    hb_context = {}
+    if isinstance(update, Update):
+        if update.effective_chat:
+            hb_context["chat_id"] = update.effective_chat.id
+            hb_context["chat_type"] = update.effective_chat.type
+        if update.effective_user:
+            hb_context["user_id"] = update.effective_user.id
+        if update.effective_message and update.effective_message.text:
+            hb_context["message_text"] = update.effective_message.text[:200]
+
+    notify_honeybadger(context.error, **hb_context)
+
     if isinstance(update, Update) and update.message:
         try:
             await update.message.reply_text("An unexpected error occurred. Please try again later.")
@@ -50,6 +63,8 @@ def main():
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
         return
+
+    init_honeybadger()
 
     application = (
         ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()

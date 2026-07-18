@@ -162,5 +162,6 @@ This project is ready to be deployed on [Railway](https://railway.app/). Railway
 4. Add the following environment variables (which you also put into GitHub Secrets):
    - `TELEGRAM_BOT_TOKEN`
    - `TWELVEDATA_API_KEY` (for `/search` only)
+   - `HONEYBADGER_API_KEY` (optional; enables Honeybadger error reporting)
    - `ALLOWED_CHAT_IDS` (optional, to restrict bot access to specific chat IDs. Set to `0` or leave empty to allow anyone to talk with the bot)
 5. Railway will automatically build and deploy your bot.

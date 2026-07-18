@@ -12,6 +12,7 @@ from bot.services import (
 )
 from bot.symbols import to_yfinance_stock, validate_stock_ticker
 from bot.utils import (
+    DIVIDER,
     _format_large_number,
     _truncate_text,
     command_guard,
@@ -108,13 +109,10 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         lines = [
             f"ℹ️ <b>{escaped_name} ({escaped_symbol})</b>",
-            f"<b>Sector:</b> {escaped_sector}",
-            f"<b>Industry:</b> {escaped_industry}",
-            "",
-            f"<b>Market Cap:</b> {html.escape(market_cap)}",
-            f"<b>P/E Ratio:</b> {html.escape(pe_str)}",
-            f"<b>Dividend Yield:</b> {html.escape(div_str)}",
-            f"<b>52W High/Low:</b> {html.escape(high52_str)} / {html.escape(low52_str)}",
+            DIVIDER,
+            f"<b>Sector:</b> {escaped_sector} · <b>Industry:</b> {escaped_industry}",
+            f"📦 Cap {html.escape(market_cap)} · P/E {html.escape(pe_str)} · "
+            f"Div {html.escape(div_str)} · 52W {html.escape(low52_str)}–{html.escape(high52_str)}",
         ]
 
         if website:
@@ -124,7 +122,7 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 lines.append(f"<b>Website:</b> {html.escape(website)}")
 
-        lines.extend(["", f"<b>Summary:</b> <i>{escaped_summary}</i>"])
+        lines.extend(["", "📝 <b>Summary</b>", f"<i>{escaped_summary}</i>"])
 
         await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
 
@@ -166,8 +164,8 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        lines = [f"📰 <b>Recent news for {html.escape(yfinance_symbol)}</b>", ""]
-        for item in news_items[:5]:
+        lines = [f"📰 <b>Recent news for {html.escape(yfinance_symbol)}</b>", DIVIDER]
+        for idx, item in enumerate(news_items[:5], start=1):
             content = item.get("content", {}) if "content" in item else item
             title = content.get("title", "No Title")
 
@@ -180,9 +178,9 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
             escaped_title = html.escape(title)
             if validate_url(url):
                 escaped_url = html.escape(url)
-                lines.append(f'• <a href="{escaped_url}">{escaped_title}</a>')
+                lines.append(f'<b>{idx}.</b> <a href="{escaped_url}">{escaped_title}</a>')
             else:
-                lines.append(f"• {escaped_title}")
+                lines.append(f"<b>{idx}.</b> {escaped_title}")
 
         await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
 
@@ -231,7 +229,7 @@ async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escaped_symbol = html.escape(yfinance_symbol)
         escaped_cap = html.escape(market_cap)
 
-        text = f"💰 <b>{escaped_name} ({escaped_symbol})</b> Market Cap: <b>{escaped_cap}</b>"
+        text = f"💰 <b>{escaped_name} ({escaped_symbol})</b>\n{DIVIDER}\nMarket Cap: <b>{escaped_cap}</b>"
         await update.message.reply_text(text, parse_mode="HTML")
 
     except Exception as e:

@@ -1,3 +1,0 @@
-## 2024-05-18 - Telegram Bot Typing Indicators & Keyboards
-**Learning:** Telegram bots can feel unresponsive when making API requests. Adding typing indicators is a very standard and delightful way to show the bot is "thinking", while reply keyboards provide discoverability without requiring users to type out commands. In a CLI/Chat context, this is equivalent to adding ARIA or a spinner in the DOM.
-**Action:** Always consider `send_chat_action(ChatAction.TYPING)` for Telegram bots handling async operations, and look for opportunities to add `ReplyKeyboardMarkup` to make onboarding easier for mobile users who don't want to type long commands.

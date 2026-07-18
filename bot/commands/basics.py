@@ -10,6 +10,7 @@ from telegram.constants import ChatType
 from telegram.ext import Application, ContextTypes
 
 from bot.config import logger
+from bot.utils import DIVIDER
 
 
 def get_help_text(first_name: str = "there", specific_command: str = None) -> str:
@@ -17,7 +18,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
 
     if specific_command == "stock":
         return (
-            "<b>/stock &lt;ticker&gt;</b>\n"
+            f"<b>/stock &lt;ticker&gt;</b>\n{DIVIDER}\n"
             "Shows a quote snapshot for a stock, ETF, fund, or Yahoo Finance-compatible symbol.\n\n"
             "Examples:\n"
             "  /stock AAPL\n"
@@ -43,7 +44,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         )
     elif specific_command == "crypto":
         return (
-            "<b>/crypto &lt;symbol&gt;</b>\n"
+            f"<b>/crypto &lt;symbol&gt;</b>\n{DIVIDER}\n"
             "Shows a quote snapshot for a crypto pair.\n\n"
             "Examples:\n"
             "  /crypto BTC\n"
@@ -63,7 +64,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         )
     elif specific_command == "indices" or specific_command == "indicies":
         return (
-            "<b>/indices</b>\n"
+            f"<b>/indices</b>\n{DIVIDER}\n"
             "Shows current levels and ranges of major market indices (S&P 500, Dow Jones, Nasdaq).\n\n"
             "Default output:\n"
             "  • Current level\n"
@@ -86,18 +87,24 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         return "<b>/search &lt;query&gt;</b>\nSearches the Twelve Data API for a given company name or symbol."
 
     lines = [
-        f"Hello {escaped_name}! I am your Financial Market Bot 📈",
+        f"👋 Hello {escaped_name}! I am your Financial Market Bot 📈",
+        DIVIDER,
         "",
-        "Here are the commands you can use:",
-        "📊 <b>/stock &lt;ticker&gt;</b> - Get the current price of a stock",
-        "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Get detailed company info",
-        "📰 <b>/stocknews &lt;ticker&gt;</b> - Get latest news for a stock",
-        "💰 <b>/marketcap &lt;ticker&gt;</b> - Get the market cap of a stock",
-        "🪙 <b>/crypto &lt;symbol&gt;</b> - Get the current price of a cryptocurrency",
-        "📈 <b>/indices</b> - Get current levels of major market indices",
+        "📈 <b>Stocks</b>",
+        "📊 <b>/stock &lt;ticker&gt;</b> - Current price of a stock",
+        "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Detailed company info",
+        "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
+        "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
+        "",
+        "🪙 <b>Crypto &amp; Markets</b>",
+        "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",
+        "📈 <b>/indices</b> - Levels of major market indices",
+        "",
+        "🔍 <b>Search</b>",
         "🔍 <b>/search &lt;query&gt;</b> - Search for a symbol",
         "",
-        "For more info on a command, use <b>/help &lt;command&gt;</b> (e.g., /help stock)",
+        DIVIDER,
+        "💡 For more info on a command, use <b>/help &lt;command&gt;</b> (e.g., <code>/help stock</code>)",
         "",
         "⚠️ <i>Disclaimer: Data is for informational purposes only, "
         "may be delayed, and does not constitute financial advice.</i>",

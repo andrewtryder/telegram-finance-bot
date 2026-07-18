@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from bot.config import MAX_SEARCH_LEN, TWELVEDATA_API_KEY, logger
 from bot.services import fetch_with_cache
-from bot.utils import command_guard, send_action
+from bot.utils import DIVIDER, command_guard, send_action
 
 
 @command_guard
@@ -47,8 +47,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             results = data["data"][:5]  # Limit to Top 5 results
             escaped_query = html.escape(query)
 
-            text = f"🔍 <b>Search results for '{escaped_query}':</b>\n\n"
-            for item in results:
+            text = f"🔍 <b>Search results for '{escaped_query}'</b>\n{DIVIDER}\n"
+            for idx, item in enumerate(results, start=1):
                 sym = item.get("symbol", "N/A")
                 name = item.get("instrument_name", "N/A")
                 exch = item.get("exchange", "N/A")
@@ -58,7 +58,10 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 escaped_name = html.escape(name)
                 escaped_exch = html.escape(exch)
                 escaped_type = html.escape(type_)
-                text += f"• <b>{escaped_sym}</b> - {escaped_name} ({escaped_exch}, {escaped_type})\n"
+                text += (
+                    f"<b>{idx}.</b> <code>{escaped_sym}</code> — {escaped_name} "
+                    f"<i>({escaped_exch}, {escaped_type})</i>\n"
+                )
 
             await update.message.reply_text(text, parse_mode="HTML")
         else:

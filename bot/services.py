@@ -174,7 +174,7 @@ def _format_volume(vol) -> str:
 
 
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None, is_crypto: bool = False) -> str:
-    from .utils import _format_large_number, _format_market_time
+    from .utils import DIVIDER, _format_large_number, _format_market_time, _trend_arrow
 
     display_symbol = display_symbol or yfinance_symbol
     try:
@@ -192,16 +192,11 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
 
         # Crypto emoji vs Stock emoji
         icon = "🪙" if is_crypto else "📈"
+        title = f"{icon} <b>{escaped_name} ({escaped_display})</b>"
 
-        # Base Title
-        if is_crypto:
-            title = f"{icon} <b>{escaped_name} ({escaped_display})</b>"
-        else:
-            title = f"{icon} <b>{escaped_name} ({escaped_display})</b>"
+        lines = [title, DIVIDER]
 
-        lines = [title, ""]
-
-        # Price and Change
+        # Price and Change, combined onto one line
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
         open_price = info.get("open") or info.get("regularMarketOpen")
 
@@ -214,74 +209,80 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
             change_pct = info.get("regularMarketChangePercent", 0.0)
 
         sign = "+" if change >= 0 else ""
+        arrow = _trend_arrow(change)
 
-        lines.append(f"<b>Price:</b> {_format_price(price, is_crypto)}")
-        lines.append(f"<b>Today:</b> {sign}{_format_price(change, is_crypto)} ({sign}{change_pct:.2f}%)")
+        lines.append(
+            f"<b>Price:</b> {_format_price(price, is_crypto)}  "
+            f"{arrow} <b>Today:</b> {sign}{_format_price(change, is_crypto)} ({sign}{change_pct:.2f}%)"
+        )
 
         if not is_crypto:
+            open_close_bits = []
             if prev_close:
-                lines.append(f"<b>Previous Close:</b> {_format_price(prev_close, False)}")
+                open_close_bits.append(f"Prev Close {_format_price(prev_close, False)}")
             if open_price:
-                lines.append(f"<b>Open:</b> {_format_price(open_price, False)}")
+                open_close_bits.append(f"Open {_format_price(open_price, False)}")
+            if open_close_bits:
+                lines.append(" · ".join(open_close_bits))
 
-        lines.append("")
-
-        # Ranges
+        # Ranges, folded onto one line
+        range_bits = []
         day_high = info.get("dayHigh") or info.get("regularMarketDayHigh")
         day_low = info.get("dayLow") or info.get("regularMarketDayLow")
         if day_high is not None and day_low is not None:
-            lines.append(
-                f"<b>Day Range:</b> {_format_price(day_low, is_crypto)} – {_format_price(day_high, is_crypto)}"
-            )
+            range_bits.append(f"Day {_format_price(day_low, is_crypto)}–{_format_price(day_high, is_crypto)}")
 
         week_high = info.get("weekHigh")
         week_low = info.get("weekLow")
         if week_high is not None and week_low is not None:
-            lines.append(
-                f"<b>Week Range:</b> {_format_price(week_low, is_crypto)} – {_format_price(week_high, is_crypto)}"
-            )
+            range_bits.append(f"Week {_format_price(week_low, is_crypto)}–{_format_price(week_high, is_crypto)}")
 
         year_high = info.get("yearHigh") or info.get("fiftyTwoWeekHigh")
         year_low = info.get("yearLow") or info.get("fiftyTwoWeekLow")
         if year_high is not None and year_low is not None:
-            lines.append(
-                f"<b>52W Range:</b> {_format_price(year_low, is_crypto)} – {_format_price(year_high, is_crypto)}"
-            )
+            range_bits.append(f"52W {_format_price(year_low, is_crypto)}–{_format_price(year_high, is_crypto)}")
 
-        lines.append("")
+        if range_bits:
+            lines.append(f"📊 <b>Range:</b> {' · '.join(range_bits)}")
 
-        # Volume & Market Cap
+        # Volume & Market Cap, folded onto one line
+        stat_bits = []
         volume = info.get("lastVolume") or info.get("regularMarketVolume") or info.get("volume")
         if volume:
-            lines.append(f"<b>Volume:</b> {_format_volume(volume)}")
+            stat_bits.append(f"Vol {_format_volume(volume)}")
 
         if not is_crypto:
             avg_vol = info.get("threeMonthAverageVolume") or info.get("averageVolume")
             if avg_vol:
-                lines.append(f"<b>Avg Volume:</b> {_format_volume(avg_vol)}")
+                stat_bits.append(f"Avg Vol {_format_volume(avg_vol)}")
 
             mcap = info.get("marketCap")
             if mcap:
-                lines.append(f"<b>Market Cap:</b> {_format_large_number(mcap)}")
+                stat_bits.append(f"Cap {_format_large_number(mcap)}")
 
-        lines.append("")
+        if stat_bits:
+            lines.append(f"📦 {' · '.join(stat_bits)}")
 
-        # Meta
+        # Meta, folded onto one line
+        meta_bits = []
         exchange = info.get("exchange")
         if exchange and not is_crypto:
-            lines.append(f"<b>Exchange:</b> {html.escape(str(exchange))}")
+            meta_bits.append(html.escape(str(exchange)))
 
         currency = info.get("currency")
         if currency:
-            lines.append(f"<b>Currency:</b> {html.escape(str(currency))}")
+            meta_bits.append(html.escape(str(currency)))
 
         market_time = _format_market_time(info)
         # fallback for timezone if time format fails
         tz = info.get("timezone")
         if market_time:
-            lines.append(f"<b>As of:</b> {html.escape(market_time)}")
+            meta_bits.append(f"as of {html.escape(market_time)}")
         elif tz:
-            lines.append(f"<b>Timezone:</b> {html.escape(str(tz))}")
+            meta_bits.append(html.escape(str(tz)))
+
+        if meta_bits:
+            lines.append(f"<i>{' · '.join(meta_bits)}</i>")
 
         return "\n".join(lines)
 

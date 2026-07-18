@@ -70,6 +70,20 @@ def send_action(action):
     return decorator
 
 
+DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+
+
+def _trend_arrow(change: float) -> str:
+    """Returns a directional indicator for a price/level change."""
+    if change is None:
+        return "▪️"
+    if change > 0:
+        return "🔺"
+    if change < 0:
+        return "🔻"
+    return "▪️"
+
+
 def _format_market_time(info: dict) -> str:
     from datetime import datetime, timezone
 
