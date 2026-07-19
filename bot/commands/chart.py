@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from bot.config import logger
 from bot.services import get_history_chart_png
-from bot.symbols import to_yfinance_stock, validate_stock_ticker
+from bot.symbols import resolve_market_symbol
 from bot.utils import command_guard, send_action
 
 ALLOWED_PERIODS = {"1mo", "3mo", "6mo", "1y"}
@@ -20,7 +20,7 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "Usage: <code>/chart AAPL</code> or <code>/chart AAPL 3mo</code> (1mo, 3mo, 6mo, 1y)",
+            "Usage: <code>/chart AAPL</code> or <code>/chart BTC 3mo</code> (1mo, 3mo, 6mo, 1y)",
             parse_mode="HTML",
         )
         return
@@ -34,22 +34,23 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if not validate_stock_ticker(ticker):
-        await update.message.reply_text("Invalid stock ticker format.", parse_mode="HTML")
+    resolved = resolve_market_symbol(ticker)
+    if resolved is None:
+        await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
         return
 
-    yfinance_symbol = to_yfinance_stock(ticker)
+    yfinance_symbol, display, _is_crypto = resolved
     try:
         png = await get_history_chart_png(yfinance_symbol, period=period)
         if not png:
             await update.message.reply_text(
-                f"Could not build a chart for {html.escape(yfinance_symbol)}.",
+                f"Could not build a chart for {html.escape(display)}.",
                 parse_mode="HTML",
             )
             return
         await update.message.reply_photo(
             photo=png,
-            caption=f"📈 {yfinance_symbol} · {period}",
+            caption=f"📈 {display} · {period}",
         )
     except Exception as e:
         logger.error(f"Error in /chart for {yfinance_symbol}: {e}")

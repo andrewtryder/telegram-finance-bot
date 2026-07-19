@@ -67,6 +67,18 @@ if ALLOWED_CHAT_IDS_ENV:
             except ValueError:
                 logger.warning(f"Invalid chat ID in ALLOWED_CHAT_IDS: {cid}")
 
+# Owner user IDs for /admin (separate from chat allowlist)
+ADMIN_USER_IDS = set()
+ADMIN_USER_IDS_ENV = os.getenv("ADMIN_USER_IDS")
+if ADMIN_USER_IDS_ENV:
+    for uid in ADMIN_USER_IDS_ENV.split(","):
+        uid = uid.strip().strip("'\"")
+        if uid:
+            try:
+                ADMIN_USER_IDS.add(int(uid))
+            except ValueError:
+                logger.warning(f"Invalid user ID in ADMIN_USER_IDS: {uid}")
+
 INDEX_MAPPING = {"^GSPC": "S&P 500", "^DJI": "Dow Jones", "^IXIC": "Nasdaq"}
 
 

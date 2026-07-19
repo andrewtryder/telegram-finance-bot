@@ -191,6 +191,12 @@ def alert_list(chat_id: int) -> list[dict]:
 
 
 def alert_remove(chat_id: int, alert_id: int) -> tuple[bool, str]:
+    """Remove an alert by id within a chat.
+
+    Intentionally chat-scoped (not creator-scoped): alerts fire into the chat
+    and share a per-chat cap, so any member who can run /alert may remove them.
+    Contrast with watchlist_remove, which is user-scoped.
+    """
     with _lock:
         conn = _connect()
         try:

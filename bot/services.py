@@ -196,7 +196,7 @@ def _format_extended_hours(info: dict) -> str | None:
     )
 
 
-def format_compact_quote(info: dict, display_symbol: str) -> str:
+def format_compact_quote(info: dict, display_symbol: str, is_crypto: bool = False) -> str:
     """One-line quote for compare / watchlist."""
     from .utils import _trend_arrow
 
@@ -218,7 +218,11 @@ def format_compact_quote(info: dict, display_symbol: str) -> str:
 
     sign = "+" if change >= 0 else ""
     arrow = _trend_arrow(change)
-    return f"<b>{escaped}</b>: {_format_price(price, False)}  {arrow} {sign}{change:,.2f} ({sign}{change_pct:.2f}%)"
+    if is_crypto and abs(change) < 1.0:
+        change_str = f"{sign}{change:,.4f}"
+    else:
+        change_str = f"{sign}{change:,.2f}"
+    return f"<b>{escaped}</b>: {_format_price(price, is_crypto)}  {arrow} {change_str} ({sign}{change_pct:.2f}%)"
 
 
 async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> bytes | None:
@@ -238,15 +242,24 @@ async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> by
             return None
 
         fig, ax = plt.subplots(figsize=(8, 4), dpi=120)
-        ax.plot(hist.index, hist["Close"], color="#2563eb", linewidth=1.5)
-        ax.set_title(f"{yfinance_symbol.upper()} ({period})")
-        ax.set_ylabel("Close")
-        ax.grid(True, alpha=0.3)
+        bg = "#0f1419"
+        line = "#38bdf8"
+        fig.patch.set_facecolor(bg)
+        ax.set_facecolor(bg)
+        closes = hist["Close"]
+        ax.plot(hist.index, closes, color=line, linewidth=1.8)
+        ax.fill_between(hist.index, closes, alpha=0.25, color=line)
+        ax.set_title(f"{yfinance_symbol.upper()} ({period})", color="#e2e8f0", fontsize=12)
+        ax.set_ylabel("Close", color="#94a3b8")
+        ax.tick_params(colors="#94a3b8", labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_color("#1e293b")
+        ax.grid(True, alpha=0.2, color="#475569")
         fig.autofmt_xdate()
         fig.tight_layout()
 
         buf = BytesIO()
-        fig.savefig(buf, format="png")
+        fig.savefig(buf, format="png", facecolor=fig.get_facecolor(), edgecolor="none")
         plt.close(fig)
         buf.seek(0)
         return buf.read()

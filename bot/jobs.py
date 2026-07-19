@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from telegram.ext import ContextTypes
 
 from bot.config import logger
 from bot.metrics import snapshot
-from bot.services import _get_yfinance_info
+from bot.services import _format_price, _get_yfinance_info
 from bot.storage import alert_delete_by_id, alerts_all
+from bot.symbols import is_crypto_symbol
 
 
 async def log_metrics_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -26,13 +28,18 @@ async def check_price_alerts_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     for row in rows:
         by_symbol.setdefault(row["symbol"], []).append(row)
 
-    for symbol, alerts in by_symbol.items():
-        try:
-            info = await _get_yfinance_info(symbol)
-        except Exception as e:
-            logger.error(f"Alert poll failed for {symbol}: {e}")
+    symbols = list(by_symbol.keys())
+    results = await asyncio.gather(
+        *[_get_yfinance_info(symbol) for symbol in symbols],
+        return_exceptions=True,
+    )
+
+    for symbol, result in zip(symbols, results):
+        if isinstance(result, Exception):
+            logger.error(f"Alert poll failed for {symbol}: {result}")
             continue
 
+        info = result
         if not info:
             continue
 
@@ -40,14 +47,15 @@ async def check_price_alerts_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         if price is None:
             continue
 
-        for alert in alerts:
+        for alert in by_symbol[symbol]:
             direction = alert["direction"]
             threshold = float(alert["threshold"])
             fired = (direction == "above" and price >= threshold) or (direction == "below" and price <= threshold)
             if not fired:
                 continue
 
-            text = f"🔔 <b>Alert #{alert['id']}</b>\n{symbol} is ${price:,.2f} ({direction} {threshold})"
+            price_str = _format_price(price, is_crypto_symbol(symbol))
+            text = f"🔔 <b>Alert #{alert['id']}</b>\n{symbol} is {price_str} ({direction} {threshold})"
             try:
                 await context.bot.send_message(chat_id=alert["chat_id"], text=text, parse_mode="HTML")
             except Exception as e:
