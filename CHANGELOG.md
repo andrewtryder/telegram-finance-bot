@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.4.0](https://github.com/andrewtryder/telegram-stock-price-bot/compare/telegram-stock-price-bot-v0.3.0...telegram-stock-price-bot-v0.4.0) (2026-07-19)
+
+
+### Features
+
+* add Honeybadger error reporting and compact message layouts ([bdf12b2](https://github.com/andrewtryder/telegram-stock-price-bot/commit/bdf12b2b48ce1652a5c7adcd6afb3ee3d0ee8676))
+* add watchlists, charts, alerts, and hardening fixes ([1d15422](https://github.com/andrewtryder/telegram-stock-price-bot/commit/1d15422e222bb55b883cd06ac3d44d18dad7ed82))
+* crypto across commands, admin stats, and chart polish ([29d4798](https://github.com/andrewtryder/telegram-stock-price-bot/commit/29d479875081a07aa9c3a7c4fd3d37ef320fefe8))
+* crypto support, admin stats, and bot polish ([065d233](https://github.com/andrewtryder/telegram-stock-price-bot/commit/065d2331a50a8fdcc673fe925d5b8e4f035b9cda))
+* migrate /search to yfinance and drop Twelve Data ([09ffb64](https://github.com/andrewtryder/telegram-stock-price-bot/commit/09ffb6412483a4d37834047c94990f3fad9db0bd))
+* remove menu bar and reply keyboard from chats and channels ([bf67248](https://github.com/andrewtryder/telegram-stock-price-bot/commit/bf67248b2f07edb6a21370d7553d3354e8356cb2))
+
+
+### Documentation
+
+* document chat-owned alerts and slim the README ([65c9e3f](https://github.com/andrewtryder/telegram-stock-price-bot/commit/65c9e3f4ade8c47daf168d8b18e0ef7c5d9ab010))
+
 ## [0.3.0](https://github.com/andrewtryder/telegram-stock-price-bot/compare/telegram-stock-price-bot-v0.2.0...telegram-stock-price-bot-v0.3.0) (2026-07-08)
 
 
