@@ -4,9 +4,12 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from bot.config import MAX_SEARCH_LEN, TWELVEDATA_API_KEY, logger
-from bot.services import fetch_with_cache
+from bot.config import MAX_SEARCH_LEN, logger
+from bot.services import search_symbols
 from bot.utils import DIVIDER, command_guard, send_action
+
+# Keep results focused on things the bot can actually quote.
+_RELEVANT_TYPES = {"EQUITY", "ETF", "CRYPTOCURRENCY", "INDEX", "MUTUALFUND", "CURRENCY"}
 
 
 @command_guard
@@ -31,42 +34,34 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if not TWELVEDATA_API_KEY:
-        await update.message.reply_text("Error: Twelve Data API Key is not configured.")
-        return
-
-    url = "https://api.twelvedata.com/symbol_search"
-    params = {"symbol": query, "apikey": TWELVEDATA_API_KEY}
+    escaped_query = html.escape(query)
 
     try:
-        logger.info(f"Twelve Data search initiated for query: {query}")
-        data = await fetch_with_cache(url, params=params)
-        logger.debug(f"Raw Search API Response for '{query}': {data}")
+        quotes = await search_symbols(query, max_results=8)
+        results = [q for q in quotes if q.get("quoteType", "").upper() in _RELEVANT_TYPES][:5]
 
-        if "data" in data and len(data["data"]) > 0:
-            results = data["data"][:5]  # Limit to Top 5 results
-            escaped_query = html.escape(query)
-
-            text = f"🔍 <b>Search results for '{escaped_query}'</b>\n{DIVIDER}\n"
-            for idx, item in enumerate(results, start=1):
-                sym = item.get("symbol", "N/A")
-                name = item.get("instrument_name", "N/A")
-                exch = item.get("exchange", "N/A")
-                type_ = item.get("instrument_type", "N/A")
-
-                escaped_sym = html.escape(sym)
-                escaped_name = html.escape(name)
-                escaped_exch = html.escape(exch)
-                escaped_type = html.escape(type_)
-                text += (
-                    f"<b>{idx}.</b> <code>{escaped_sym}</code> — {escaped_name} "
-                    f"<i>({escaped_exch}, {escaped_type})</i>\n"
-                )
-
-            await update.message.reply_text(text, parse_mode="HTML")
-        else:
-            escaped_query = html.escape(query)
+        if not results:
             await update.message.reply_text(f"No results found for '{escaped_query}'.", parse_mode="HTML")
+            return
+
+        text = f"🔍 <b>Search results for '{escaped_query}'</b>\n{DIVIDER}\n"
+        for idx, item in enumerate(results, start=1):
+            sym = item.get("symbol", "N/A")
+            name = item.get("shortname") or item.get("longname") or "N/A"
+            exch = item.get("exchDisp") or item.get("exchange") or "N/A"
+            type_ = item.get("typeDisp") or item.get("quoteType") or "N/A"
+
+            escaped_sym = html.escape(sym)
+            escaped_name = html.escape(name)
+            escaped_exch = html.escape(exch)
+            escaped_type = html.escape(type_)
+            text += (
+                f"<b>{idx}.</b> <code>{escaped_sym}</code> — {escaped_name} <i>({escaped_exch}, {escaped_type})</i>\n"
+            )
+
+        text += f"\n💡 Try <code>/stock {html.escape(results[0].get('symbol', ''))}</code> for a quote."
+
+        await update.message.reply_text(text, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Error searching for {query}: {e}")
         await update.message.reply_text("Sorry, the search function is currently unavailable.")

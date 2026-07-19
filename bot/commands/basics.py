@@ -85,13 +85,13 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
     elif specific_command == "marketcap":
         return "<b>/marketcap &lt;ticker&gt;</b>\nFetches the current market capitalization of a company."
     elif specific_command == "search":
-        return "<b>/search &lt;query&gt;</b>\nSearches the Twelve Data API for a given company name or symbol."
+        return "<b>/search &lt;query&gt;</b>\nSearches Yahoo Finance for a given company name or symbol."
     elif specific_command == "compare":
         return "<b>/compare &lt;t1&gt; &lt;t2&gt; [t3] [t4]</b>\nCompares 2–4 stock quotes side by side."
     elif specific_command == "watchlist":
         return (
             "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
-            "Per-chat watchlist (max 10). Bare /watchlist shows compact quotes."
+            "Personal watchlist (max 10), shared across private chats, groups, and channels."
         )
     elif specific_command == "chart":
         return (
@@ -115,7 +115,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
         "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
         "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
-        "👀 <b>/watchlist</b> - Per-chat watchlist",
+        "👀 <b>/watchlist</b> - Personal watchlist (shared across chats)",
         "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
         "🔔 <b>/alert</b> - One-shot price alerts",
         "",

@@ -42,30 +42,18 @@ def mock_context():
 
 
 @pytest.mark.asyncio
-@patch("bot.commands.search.TWELVEDATA_API_KEY", None)
-async def test_search_no_api_key(mock_update, mock_context):
-    mock_context.args = ["Apple"]
-
-    await search(mock_update, mock_context)
-
-    mock_update.message.reply_text.assert_called_once_with("Error: Twelve Data API Key is not configured.")
-
-
-@pytest.mark.asyncio
-@patch("bot.commands.search.TWELVEDATA_API_KEY", "fake_key")
-@patch("bot.commands.search.fetch_with_cache", new_callable=AsyncMock)
-async def test_search_html_escaping(mock_fetch, mock_update, mock_context):
+@patch("bot.commands.search.search_symbols", new_callable=AsyncMock)
+async def test_search_html_escaping(mock_search, mock_update, mock_context):
     mock_context.args = ["<malicious_query>"]
-    mock_fetch.return_value = {
-        "data": [
-            {
-                "symbol": "TEST<",
-                "instrument_name": "Test Co.",
-                "exchange": "NYSE",
-                "instrument_type": "Common Stock",
-            }
-        ]
-    }
+    mock_search.return_value = [
+        {
+            "symbol": "TEST<",
+            "shortname": "Test Co.",
+            "exchDisp": "NYSE",
+            "typeDisp": "Equity",
+            "quoteType": "EQUITY",
+        }
+    ]
 
     await search(mock_update, mock_context)
 
@@ -78,11 +66,10 @@ async def test_search_html_escaping(mock_fetch, mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("bot.commands.search.TWELVEDATA_API_KEY", "fake_key")
-@patch("bot.commands.search.fetch_with_cache", new_callable=AsyncMock)
-async def test_search_html_escaping_no_results(mock_fetch, mock_update, mock_context):
+@patch("bot.commands.search.search_symbols", new_callable=AsyncMock)
+async def test_search_no_results(mock_search, mock_update, mock_context):
     mock_context.args = ["<malicious_query>"]
-    mock_fetch.return_value = {"data": []}
+    mock_search.return_value = []
 
     await search(mock_update, mock_context)
 
@@ -91,6 +78,28 @@ async def test_search_html_escaping_no_results(mock_fetch, mock_update, mock_con
 
     assert kwargs.get("parse_mode") == "HTML"
     assert "&lt;malicious_query&gt;" in args[0]
+
+
+@pytest.mark.asyncio
+@patch("bot.commands.search.search_symbols", new_callable=AsyncMock)
+async def test_search_filters_irrelevant_types(mock_search, mock_update, mock_context):
+    mock_context.args = ["Apple"]
+    mock_search.return_value = [
+        {
+            "symbol": "AAPL",
+            "shortname": "Apple Inc.",
+            "exchDisp": "NASDAQ",
+            "typeDisp": "Equity",
+            "quoteType": "EQUITY",
+        },
+        {"symbol": "AAPL-NEWS", "shortname": "Some article", "quoteType": "FUTURE"},
+    ]
+
+    await search(mock_update, mock_context)
+
+    args, kwargs = mock_update.message.reply_text.call_args
+    assert "AAPL" in args[0]
+    assert "AAPL-NEWS" not in args[0]
 
 
 @pytest.mark.asyncio

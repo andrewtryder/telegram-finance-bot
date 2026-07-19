@@ -1,7 +1,6 @@
 python-telegram-bot[job-queue]>=22.8,<23
 python-dotenv>=1,<2
 yfinance>=1.5.1,<1.6
-httpx>=0.27,<1
 cachetools>=7.1.4,<8
 honeybadger>=1,<2
 matplotlib>=3.8,<4

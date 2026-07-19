@@ -1,73 +1,50 @@
 import asyncio
 import html
 
-import httpx
 import yfinance as yf
 from cachetools import TTLCache
 
 from .config import logger
 
-# API Cache: (url, redacted_params_tuple) -> data
-API_CACHE = TTLCache(maxsize=100, ttl=600)
 # Quote cache (yfinance symbol -> info dict)
 QUOTE_CACHE = TTLCache(maxsize=100, ttl=60)
-
-# Shared HTTP client
-HTTP_CLIENT = None
-
-
-async def init_http_client():
-    global HTTP_CLIENT
-    from .config import PROVIDER_TIMEOUT
-
-    headers = {"User-Agent": "TelegramStockPriceBot/1.0.0"}
-    HTTP_CLIENT = httpx.AsyncClient(timeout=PROVIDER_TIMEOUT, headers=headers)
-    logger.info("Shared HTTP client initialized")
+# Search cache (query -> list of quote dicts)
+SEARCH_CACHE = TTLCache(maxsize=200, ttl=300)
 
 
-async def close_http_client():
-    global HTTP_CLIENT
-    if HTTP_CLIENT:
-        await HTTP_CLIENT.aclose()
-        logger.info("Shared HTTP client closed")
+async def search_symbols(query: str, max_results: int = 5) -> list[dict]:
+    """Search Yahoo Finance for symbols matching a free-text query.
 
-
-def _make_safe_cache_key(url: str, params: dict | None) -> tuple:
-    if not params:
-        return (url, ())
-    safe_params = []
-    for k, v in sorted(params.items()):
-        if k in ("apikey", "api_key", "token", "key"):
-            safe_params.append((k, "[REDACTED]"))
-        else:
-            safe_params.append((k, str(v)))
-    return (url, tuple(safe_params))
-
-
-async def fetch_with_cache(url: str, params: dict | None = None) -> dict:
+    Returns Yahoo-native symbols, so results can be passed straight into
+    /stock, /crypto, /chart, /compare, or /watchlist without translation.
+    """
     from .utils import execute_provider_call
 
-    cache_key = _make_safe_cache_key(url, params)
+    cache_key = (query.lower().strip(), max_results)
+    if cache_key in SEARCH_CACHE:
+        logger.info(f"Search cache hit for: {query!r}")
+        return SEARCH_CACHE[cache_key]
 
-    if cache_key in API_CACHE:
-        logger.info("⚡ Cache HIT for API query (secrets redacted)")
-        return API_CACHE[cache_key]
+    def call_search():
+        result = yf.Search(
+            query,
+            max_results=max_results,
+            news_count=0,
+            lists_count=0,
+            include_research=False,
+            include_nav_links=False,
+            raise_errors=False,
+        )
+        return result.quotes or []
 
-    logger.info("🐢 Cache MISS for API query (secrets redacted) - fetching from API")
-    global HTTP_CLIENT
+    try:
+        quotes = await execute_provider_call(asyncio.to_thread, call_search)
+    except Exception as e:
+        logger.error(f"yfinance search error for {query!r}: {e}")
+        return []
 
-    async def _do_fetch():
-        if HTTP_CLIENT and not HTTP_CLIENT.is_closed:
-            response = await HTTP_CLIENT.get(url, params=params)
-        else:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
-
-    data = await execute_provider_call(_do_fetch)
-    API_CACHE[cache_key] = data
-    return data
+    SEARCH_CACHE[cache_key] = quotes
+    return quotes
 
 
 def _fetch_yfinance_info(yfinance_symbol: str) -> dict:

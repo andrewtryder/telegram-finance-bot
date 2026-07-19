@@ -1,4 +1,5 @@
 from telegram import Update
+from telegram.error import Conflict
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -26,7 +27,6 @@ from bot.commands import (
 from bot.config import TELEGRAM_BOT_TOKEN, init_honeybadger, logger, notify_honeybadger
 from bot.jobs import check_price_alerts_job, log_metrics_job
 from bot.metrics import record_error, snapshot
-from bot.services import close_http_client, init_http_client
 from bot.storage import init_storage
 
 # Optional: Only ignore text/commands in groups if you didn't enable Privacy Mode
@@ -35,6 +35,15 @@ GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Reg
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log unexpected exceptions and reply with a generic safe message."""
+    # Another process is long-polling the same token; not actionable as an app bug.
+    if isinstance(context.error, Conflict):
+        logger.warning(
+            "Telegram Conflict: another getUpdates poller is using this bot token. "
+            "Ensure only one instance is running (e.g. stop local bots while Railway is up, "
+            "and keep Railway replicas at 1)."
+        )
+        return
+
     record_error()
     logger.exception("Exception occurred while handling an update:", exc_info=context.error)
 
@@ -59,7 +68,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def post_init(application) -> None:
     await setup_commands(application)
-    await init_http_client()
     init_storage()
 
     if application.job_queue:
@@ -73,7 +81,6 @@ async def post_init(application) -> None:
 async def post_shutdown(application) -> None:
     data = snapshot()
     logger.info(f"metrics_snapshot_shutdown {data}")
-    await close_http_client()
 
 
 def main():

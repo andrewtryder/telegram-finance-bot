@@ -1,4 +1,6 @@
+import sqlite3
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -53,6 +55,58 @@ def test_watchlist_max(tmp_storage):
     assert "full" in msg.lower()
 
 
+def test_watchlist_shared_across_chats_same_user(tmp_storage):
+    """Same user_id sees one list regardless of which chat invoked the command."""
+    user_id = 999001
+    assert storage.watchlist_add(user_id, "AAPL")[0]
+    assert storage.watchlist_add(user_id, "MSFT")[0]
+    assert storage.watchlist_list(user_id) == ["AAPL", "MSFT"]
+    # Different user has a separate list
+    assert storage.watchlist_list(999002) == []
+    assert storage.watchlist_add(999002, "GOOG")[0]
+    assert storage.watchlist_list(user_id) == ["AAPL", "MSFT"]
+    assert storage.watchlist_list(999002) == ["GOOG"]
+
+
+def test_watchlist_migrates_private_chat_rows(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setattr("bot.config.DATA_DIR", tmp)
+        storage._db_path = None
+        db_path = Path(tmp) / "bot.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            """
+            CREATE TABLE watchlist (
+                chat_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
+                PRIMARY KEY (chat_id, symbol)
+            );
+            INSERT INTO watchlist (chat_id, symbol) VALUES (555, 'AAPL');
+            INSERT INTO watchlist (chat_id, symbol) VALUES (-1001, 'TSLA');
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        storage._db_path = None
+        storage.init_storage()
+        assert storage.watchlist_list(555) == ["AAPL"]
+        # Group/channel row dropped
+        cols = set()
+        with storage._lock:
+            c = storage._connect()
+            try:
+                cols = {r["name"] for r in c.execute("PRAGMA table_info(watchlist)").fetchall()}
+                leftover = c.execute("SELECT COUNT(*) AS c FROM watchlist WHERE symbol = 'TSLA'").fetchone()["c"]
+            finally:
+                c.close()
+        assert "user_id" in cols
+        assert "chat_id" not in cols
+        assert leftover == 0
+        storage._db_path = None
+
+
 def test_alert_crud(tmp_storage):
     ok, msg, alert_id = storage.alert_add(1, 9, "MSFT", "above", 400.0)
     assert ok and alert_id
@@ -65,9 +119,12 @@ def test_alert_crud(tmp_storage):
 
 
 @pytest.mark.asyncio
-async def test_compare_command():
+async def test_compare_command(monkeypatch):
+    import bot.utils as utils_mod
     from bot.commands.compare import compare
     from bot.utils import USER_COOLDOWNS
+
+    monkeypatch.setattr(utils_mod, "ALLOWED_CHAT_IDS", set())
 
     update = MagicMock()
     update.effective_chat.id = 1

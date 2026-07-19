@@ -48,7 +48,6 @@ logger = _configure_logging()
 
 # Constants
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
 HONEYBADGER_API_KEY = os.getenv("HONEYBADGER_API_KEY")
 HONEYBADGER_ENVIRONMENT = os.getenv("HONEYBADGER_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT") or "development"
 PROVIDER_TIMEOUT = float(os.getenv("PROVIDER_TIMEOUT", "10.0"))

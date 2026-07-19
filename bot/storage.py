@@ -23,6 +23,41 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r["name"] for r in rows}
+
+
+def _migrate_watchlist_to_user_id(conn: sqlite3.Connection) -> None:
+    """Idempotent: chat_id-scoped watchlist -> user_id-scoped."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "watchlist" not in tables:
+        return
+
+    cols = _table_columns(conn, "watchlist")
+    if "user_id" in cols and "chat_id" not in cols:
+        return
+    if "chat_id" not in cols:
+        return
+
+    logger.info("Migrating watchlist table from chat_id to user_id")
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS watchlist_new;
+        CREATE TABLE watchlist_new (
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
+            PRIMARY KEY (user_id, symbol)
+        );
+        INSERT OR IGNORE INTO watchlist_new (user_id, symbol, created_at)
+        SELECT chat_id, symbol, created_at FROM watchlist WHERE chat_id > 0;
+        DROP TABLE watchlist;
+        ALTER TABLE watchlist_new RENAME TO watchlist;
+        """
+    )
+
+
 def init_storage() -> None:
     global _db_path
     from bot.config import DATA_DIR
@@ -37,10 +72,10 @@ def init_storage() -> None:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS watchlist (
-                    chat_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
                     symbol TEXT NOT NULL,
                     created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
-                    PRIMARY KEY (chat_id, symbol)
+                    PRIMARY KEY (user_id, symbol)
                 );
                 CREATE TABLE IF NOT EXISTS alerts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,40 +90,41 @@ def init_storage() -> None:
                 CREATE INDEX IF NOT EXISTS idx_alerts_chat ON alerts(chat_id);
                 """
             )
+            _migrate_watchlist_to_user_id(conn)
             conn.commit()
             logger.info(f"SQLite storage ready at {_db_path}")
         finally:
             conn.close()
 
 
-def watchlist_list(chat_id: int) -> list[str]:
+def watchlist_list(user_id: int) -> list[str]:
     with _lock:
         conn = _connect()
         try:
             rows = conn.execute(
-                "SELECT symbol FROM watchlist WHERE chat_id = ? ORDER BY created_at ASC",
-                (chat_id,),
+                "SELECT symbol FROM watchlist WHERE user_id = ? ORDER BY created_at ASC",
+                (user_id,),
             ).fetchall()
             return [r["symbol"] for r in rows]
         finally:
             conn.close()
 
 
-def watchlist_add(chat_id: int, symbol: str) -> tuple[bool, str]:
+def watchlist_add(user_id: int, symbol: str) -> tuple[bool, str]:
     symbol = symbol.upper()
     with _lock:
         conn = _connect()
         try:
             count = conn.execute(
-                "SELECT COUNT(*) AS c FROM watchlist WHERE chat_id = ?",
-                (chat_id,),
+                "SELECT COUNT(*) AS c FROM watchlist WHERE user_id = ?",
+                (user_id,),
             ).fetchone()["c"]
             if count >= MAX_WATCHLIST:
                 return False, f"Watchlist is full (max {MAX_WATCHLIST})."
             try:
                 conn.execute(
-                    "INSERT INTO watchlist (chat_id, symbol) VALUES (?, ?)",
-                    (chat_id, symbol),
+                    "INSERT INTO watchlist (user_id, symbol) VALUES (?, ?)",
+                    (user_id, symbol),
                 )
                 conn.commit()
             except sqlite3.IntegrityError:
@@ -98,14 +134,14 @@ def watchlist_add(chat_id: int, symbol: str) -> tuple[bool, str]:
             conn.close()
 
 
-def watchlist_remove(chat_id: int, symbol: str) -> tuple[bool, str]:
+def watchlist_remove(user_id: int, symbol: str) -> tuple[bool, str]:
     symbol = symbol.upper()
     with _lock:
         conn = _connect()
         try:
             cur = conn.execute(
-                "DELETE FROM watchlist WHERE chat_id = ? AND symbol = ?",
-                (chat_id, symbol),
+                "DELETE FROM watchlist WHERE user_id = ? AND symbol = ?",
+                (user_id, symbol),
             )
             conn.commit()
             if cur.rowcount == 0:

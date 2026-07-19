@@ -63,7 +63,8 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Price must be a number.", parse_mode="HTML")
             return
         ok, msg, _alert_id = alert_add(chat_id, user_id, to_yfinance_stock(ticker), direction, threshold)
-        await update.message.reply_text(html.escape(msg), parse_mode="HTML")
+        prefix = "✅" if ok else "⚠️"
+        await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
 
     if action in ("remove", "rm", "del", "delete"):
@@ -79,7 +80,8 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Alert ID must be a number.", parse_mode="HTML")
             return
         ok, msg = alert_remove(chat_id, alert_id)
-        await update.message.reply_text(html.escape(msg), parse_mode="HTML")
+        prefix = "✅" if ok else "⚠️"
+        await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
 
     await update.message.reply_text(
