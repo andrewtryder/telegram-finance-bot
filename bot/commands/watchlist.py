@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 from bot.config import logger
 from bot.services import _get_yfinance_info, format_compact_quote
 from bot.storage import watchlist_add, watchlist_list, watchlist_remove
-from bot.symbols import to_yfinance_stock, validate_stock_ticker
+from bot.symbols import crypto_display_symbol, is_crypto_symbol, resolve_market_symbol
 from bot.utils import DIVIDER, command_guard, send_action
 
 
@@ -49,11 +49,13 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             results = await asyncio.gather(*[_get_yfinance_info(s) for s in symbols], return_exceptions=True)
             lines = ["👀 <b>Your Watchlist</b>", DIVIDER]
             for symbol, info in zip(symbols, results):
+                crypto = is_crypto_symbol(symbol)
+                display = crypto_display_symbol(symbol) if crypto else symbol
                 if isinstance(info, Exception):
                     logger.error(f"Watchlist fetch error for {symbol}: {info}")
-                    lines.append(f"<b>{html.escape(symbol)}</b>: Data unavailable")
+                    lines.append(f"<b>{html.escape(display)}</b>: Data unavailable")
                 else:
-                    lines.append(format_compact_quote(info, symbol))
+                    lines.append(format_compact_quote(info, display, is_crypto=crypto))
             await update.message.reply_text("\n".join(lines), parse_mode="HTML")
         except Exception as e:
             logger.error(f"Error showing watchlist: {e}")
@@ -70,20 +72,24 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "add":
         ticker = context.args[1]
-        if not validate_stock_ticker(ticker):
-            await update.message.reply_text("Invalid stock ticker format.", parse_mode="HTML")
+        resolved = resolve_market_symbol(ticker)
+        if resolved is None:
+            await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
             return
-        ok, msg = watchlist_add(user_id, to_yfinance_stock(ticker))
+        yf_symbol, _display, _is_crypto = resolved
+        ok, msg = watchlist_add(user_id, yf_symbol)
         prefix = "✅" if ok else "⚠️"
         await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
 
     if action in ("remove", "rm", "del", "delete"):
         ticker = context.args[1]
-        if not validate_stock_ticker(ticker):
-            await update.message.reply_text("Invalid stock ticker format.", parse_mode="HTML")
+        resolved = resolve_market_symbol(ticker)
+        if resolved is None:
+            await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
             return
-        ok, msg = watchlist_remove(user_id, to_yfinance_stock(ticker))
+        yf_symbol, _display, _is_crypto = resolved
+        ok, msg = watchlist_remove(user_id, yf_symbol)
         prefix = "✅" if ok else "⚠️"
         await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
@@ -92,6 +98,7 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Usage:\n"
         "<code>/watchlist</code> — show quotes\n"
         "<code>/watchlist add AAPL</code>\n"
+        "<code>/watchlist add BTC</code>\n"
         "<code>/watchlist remove AAPL</code>",
         parse_mode="HTML",
     )

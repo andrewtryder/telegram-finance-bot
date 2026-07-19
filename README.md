@@ -23,6 +23,7 @@ A Telegram bot for stock, crypto, and index quotes via yfinance (Yahoo Finance),
 - `/chart` — closing-price chart PNG
 - `/watchlist` — personal list (max 10), shared across your chats
 - `/alert` — one-shot price alerts (max 20 per chat); chat-owned — fire into the chat; anyone there can list or remove
+- `/admin stats` — owner-only in-memory command/error counts (`ADMIN_USER_IDS`)
 
 ## Run
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import threading
 from collections import defaultdict
 
@@ -34,6 +35,33 @@ def snapshot() -> dict:
             "errors_total": _errors_total,
             "provider_errors": dict(_provider_errors),
         }
+
+
+def format_stats_html(data: dict | None = None) -> str:
+    """HTML summary of in-memory metrics for /admin stats."""
+    data = data if data is not None else snapshot()
+    lines = ["📊 <b>Admin stats</b>", "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄", ""]
+
+    commands = data.get("commands_total") or {}
+    lines.append("<b>Commands</b>")
+    if commands:
+        for name in sorted(commands):
+            lines.append(f"  {html.escape(str(name))}: {commands[name]}")
+    else:
+        lines.append("  (none yet)")
+
+    lines.append("")
+    lines.append(f"<b>Errors:</b> {data.get('errors_total', 0)}")
+
+    providers = data.get("provider_errors") or {}
+    lines.append("<b>Provider errors</b>")
+    if providers:
+        for name in sorted(providers):
+            lines.append(f"  {html.escape(str(name))}: {providers[name]}")
+    else:
+        lines.append("  (none)")
+
+    return "\n".join(lines)
 
 
 def reset() -> None:

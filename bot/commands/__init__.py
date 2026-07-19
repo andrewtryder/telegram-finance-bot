@@ -1,3 +1,4 @@
+from .admin import admin
 from .alerts import alert
 from .basics import (
     _ignore_non_command_group_messages,
@@ -29,4 +30,5 @@ __all__ = [
     "watchlist",
     "chart",
     "alert",
+    "admin",
 ]

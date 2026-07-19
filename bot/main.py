@@ -10,6 +10,7 @@ from telegram.ext import (
 
 from bot.commands import (
     _ignore_non_command_group_messages,
+    admin,
     alert,
     chart,
     compare,
@@ -108,6 +109,7 @@ def main():
     application.add_handler(CommandHandler("watchlist", watchlist))
     application.add_handler(CommandHandler("chart", chart))
     application.add_handler(CommandHandler("alert", alert))
+    application.add_handler(CommandHandler("admin", admin))
 
     # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))

@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from bot.config import logger
 from bot.storage import alert_add, alert_list, alert_remove
-from bot.symbols import to_yfinance_stock, validate_stock_ticker
+from bot.symbols import resolve_market_symbol
 from bot.utils import DIVIDER, command_guard, send_action
 
 
@@ -43,14 +43,16 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "add":
         if len(args) < 4:
             await update.message.reply_text(
-                "Usage: <code>/alert add AAPL above 200</code>",
+                "Usage: <code>/alert add AAPL above 200</code> or <code>/alert add BTC above 100000</code>",
                 parse_mode="HTML",
             )
             return
         ticker, direction, price_raw = args[1], args[2].lower(), args[3]
-        if not validate_stock_ticker(ticker):
-            await update.message.reply_text("Invalid stock ticker format.", parse_mode="HTML")
+        resolved = resolve_market_symbol(ticker)
+        if resolved is None:
+            await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
             return
+        yf_symbol, _display, _is_crypto = resolved
         if direction not in ("above", "below"):
             await update.message.reply_text(
                 "Direction must be <code>above</code> or <code>below</code>.",
@@ -62,7 +64,7 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("Price must be a number.", parse_mode="HTML")
             return
-        ok, msg, _alert_id = alert_add(chat_id, user_id, to_yfinance_stock(ticker), direction, threshold)
+        ok, msg, _alert_id = alert_add(chat_id, user_id, yf_symbol, direction, threshold)
         prefix = "✅" if ok else "⚠️"
         await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
@@ -85,6 +87,10 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "Usage:\n<code>/alert add AAPL above 200</code>\n<code>/alert list</code>\n<code>/alert remove 3</code>",
+        "Usage:\n"
+        "<code>/alert add AAPL above 200</code>\n"
+        "<code>/alert add BTC above 100000</code>\n"
+        "<code>/alert list</code>\n"
+        "<code>/alert remove 3</code>",
         parse_mode="HTML",
     )

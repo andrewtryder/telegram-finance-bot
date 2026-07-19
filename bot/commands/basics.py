@@ -87,16 +87,22 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
     elif specific_command == "search":
         return "<b>/search &lt;query&gt;</b>\nSearches Yahoo Finance for a given company name or symbol."
     elif specific_command == "compare":
-        return "<b>/compare &lt;t1&gt; &lt;t2&gt; [t3] [t4]</b>\nCompares 2–4 stock quotes side by side."
+        return (
+            "<b>/compare &lt;t1&gt; &lt;t2&gt; [t3] [t4]</b>\n"
+            "Compares 2–4 stock or crypto quotes side by side "
+            "(e.g. <code>/compare AAPL MSFT</code>, <code>/compare BTC ETH</code>)."
+        )
     elif specific_command == "watchlist":
         return (
             "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
-            "Personal watchlist (max 10), shared across private chats, groups, and channels."
+            "Personal watchlist (max 10), shared across private chats, groups, and channels. "
+            "Accepts stocks and crypto (e.g. <code>AAPL</code>, <code>BTC</code>, <code>BTC/USD</code>)."
         )
     elif specific_command == "chart":
         return (
             "<b>/chart &lt;ticker&gt; [1mo|3mo|6mo|1y]</b>\n"
-            "Renders a closing-price line chart as a PNG (default period: 1mo)."
+            "Renders a closing-price line chart as a PNG (default period: 1mo). "
+            "Works for stocks and crypto (e.g. <code>/chart BTC</code>)."
         )
     elif specific_command == "alert":
         return (
@@ -104,7 +110,8 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "<b>/alert list</b> · <b>/alert remove &lt;id&gt;</b>\n"
             "One-shot price alerts (max 20 per chat). Chat-owned: alerts fire "
             "into this chat and anyone here can list or remove them "
-            "(unlike personal /watchlist)."
+            "(unlike personal /watchlist). Stocks and crypto "
+            "(e.g. <code>/alert add BTC above 100000</code>)."
         )
 
     lines = [

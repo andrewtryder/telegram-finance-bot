@@ -7,7 +7,7 @@ import pytest
 
 from bot import storage
 from bot.metrics import record_command, reset, snapshot
-from bot.services import format_compact_quote
+from bot.services import _format_price, format_compact_quote
 
 
 @pytest.fixture
@@ -26,6 +26,12 @@ def _reset_metrics():
     reset()
 
 
+def test_format_price_crypto_sub_dollar():
+    assert _format_price(0.1234, True) == "$0.1234"
+    assert _format_price(1.5, True) == "$1.50"
+    assert _format_price(0.1234, False) == "$0.12"
+
+
 def test_format_compact_quote_up():
     line = format_compact_quote(
         {"regularMarketPrice": 110, "previousClose": 100},
@@ -34,6 +40,16 @@ def test_format_compact_quote_up():
     assert "AAPL" in line
     assert "$110.00" in line
     assert "+" in line
+
+
+def test_format_compact_quote_crypto_sub_dollar():
+    line = format_compact_quote(
+        {"regularMarketPrice": 0.0842, "previousClose": 0.0800},
+        "DOGE/USD",
+        is_crypto=True,
+    )
+    assert "$0.0842" in line
+    assert "DOGE/USD" in line
 
 
 def test_format_compact_quote_unavailable():
@@ -143,6 +159,24 @@ async def test_check_price_alerts_job_noop_when_empty(tmp_storage):
     context.bot.send_message = AsyncMock()
     await check_price_alerts_job(context)
     context.bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_price_alerts_job_fetches_symbols_in_parallel(tmp_storage):
+    from bot.jobs import check_price_alerts_job
+
+    storage.alert_add(1, 7, "AAPL", "above", 100.0)
+    storage.alert_add(1, 7, "MSFT", "above", 200.0)
+    context = MagicMock()
+    context.bot.send_message = AsyncMock()
+
+    with patch("bot.jobs._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = {"regularMarketPrice": 50.0}
+        await check_price_alerts_job(context)
+
+    assert mock_info.await_count == 2
+    called = {c.args[0] for c in mock_info.await_args_list}
+    assert called == {"AAPL", "MSFT"}
 
 
 def test_metrics_provider_error():
