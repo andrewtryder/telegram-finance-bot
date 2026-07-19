@@ -1,6 +1,6 @@
 [project]
 name = "telegram-stock-price-bot"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Telegram bot for stock, crypto, and market index lookups."
 readme = "README.md"
 requires-python = ">=3.12"
