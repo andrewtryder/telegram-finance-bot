@@ -1,18 +1,18 @@
 <!-- OpenGraph / Social Preview -->
 <meta property="og:title" content="Telegram Financial Bot" />
 <meta property="og:description" content="A Telegram bot for stock, crypto, and index quotes, plus watchlists, charts, and price alerts via yfinance." />
-<meta property="og:image" content="https://raw.githubusercontent.com/andrewtryder/telegram-stock-price-bot/main/docs/screenshot.png" />
+<meta property="og:image" content="https://raw.githubusercontent.com/andrewtryder/telegram-finance-bot/main/docs/screenshot.png" />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://github.com/andrewtryder/telegram-stock-price-bot" />
+<meta property="og:url" content="https://github.com/andrewtryder/telegram-finance-bot" />
 
 # Telegram Financial Bot
 
-[![CI/CD Pipeline](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/andrewtryder/telegram-stock-price-bot/actions/workflows/ci-cd.yml)
-[![License](https://img.shields.io/github/license/andrewtryder/telegram-stock-price-bot)](https://github.com/andrewtryder/telegram-stock-price-bot/blob/main/LICENSE)
+[![CI/CD Pipeline](https://github.com/andrewtryder/telegram-finance-bot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/andrewtryder/telegram-finance-bot/actions/workflows/ci-cd.yml)
+[![License](https://img.shields.io/github/license/andrewtryder/telegram-finance-bot)](https://github.com/andrewtryder/telegram-finance-bot/blob/main/LICENSE)
 
 A Telegram bot for stock, crypto, and index quotes via yfinance (Yahoo Finance), with personal watchlists, charts, and chat-owned price alerts.
 
-![Telegram Financial Bot in action](https://raw.githubusercontent.com/andrewtryder/telegram-stock-price-bot/main/docs/screenshot.png)
+![Telegram Financial Bot in action](https://raw.githubusercontent.com/andrewtryder/telegram-finance-bot/main/docs/screenshot.png)
 
 ## Features
 
@@ -32,8 +32,8 @@ A Telegram bot for stock, crypto, and index quotes via yfinance (Yahoo Finance),
 3. Run with Docker (volume keeps watchlists/alerts):
 
 ```bash
-docker pull ghcr.io/andrewtryder/telegram-stock-price-bot:latest
-docker run -v bot-data:/app/data --env-file .env ghcr.io/andrewtryder/telegram-stock-price-bot:latest
+docker pull ghcr.io/andrewtryder/telegram-finance-bot:latest
+docker run -v bot-data:/app/data --env-file .env ghcr.io/andrewtryder/telegram-finance-bot:latest
 ```
 
 Or locally (Python 3.12+):

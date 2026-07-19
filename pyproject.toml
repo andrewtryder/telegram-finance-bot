@@ -1,5 +1,5 @@
 [project]
-name = "telegram-stock-price-bot"
+name = "telegram-finance-bot"
 version = "0.4.0"
 description = "A Telegram bot for stock, crypto, and market index lookups."
 readme = "README.md"

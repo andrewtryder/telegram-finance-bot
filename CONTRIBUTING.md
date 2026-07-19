@@ -1,4 +1,4 @@
-# Contributing to Telegram Stock Price Bot
+# Contributing to Telegram Finance Bot
 
 Thank you for your interest in contributing! Please review the guidelines below to ensure a smooth development process.
 
@@ -6,8 +6,8 @@ Thank you for your interest in contributing! Please review the guidelines below 
 
 1. Clone the repository and navigate into it:
    ```bash
-   git clone https://github.com/andrewtryder/telegram-stock-price-bot.git
-   cd telegram-stock-price-bot
+   git clone https://github.com/andrewtryder/telegram-finance-bot.git
+   cd telegram-finance-bot
    ```
 
 2. Create and activate a virtual environment:

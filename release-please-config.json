@@ -17,7 +17,7 @@
   ],
   "packages": {
     ".": {
-      "package-name": "telegram-stock-price-bot",
+      "package-name": "telegram-finance-bot",
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [

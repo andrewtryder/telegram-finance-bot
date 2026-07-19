@@ -1,3 +1,3 @@
-"""Telegram Stock Price Bot package."""
+"""Telegram Finance Bot package."""
 
 __version__ = "0.4.0"  # x-release-please-version

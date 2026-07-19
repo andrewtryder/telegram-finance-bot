@@ -1,4 +1,4 @@
-# Telegram Stock Bot - Agent Instructions
+# Telegram Finance Bot - Agent Instructions
 
 ## Identity & Role
 You are an expert Python backend developer maintaining a Telegram financial bot.
