@@ -102,7 +102,9 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         return (
             "<b>/alert add &lt;ticker&gt; above|below &lt;price&gt;</b>\n"
             "<b>/alert list</b> · <b>/alert remove &lt;id&gt;</b>\n"
-            "One-shot price alerts (max 20 per chat)."
+            "One-shot price alerts (max 20 per chat). Chat-owned: alerts fire "
+            "into this chat and anyone here can list or remove them "
+            "(unlike personal /watchlist)."
         )
 
     lines = [
@@ -117,7 +119,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
         "👀 <b>/watchlist</b> - Personal watchlist (shared across chats)",
         "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
-        "🔔 <b>/alert</b> - One-shot price alerts",
+        "🔔 <b>/alert</b> - One-shot price alerts (chat-owned)",
         "",
         "🪙 <b>Crypto &amp; Markets</b>",
         "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",
