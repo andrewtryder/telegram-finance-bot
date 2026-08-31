@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.5.1](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.0...telegram-finance-bot-v0.5.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **ci:** add explicit permissions block to ci-cd workflow ([#53](https://github.com/andrewtryder/telegram-finance-bot/issues/53)) ([a430487](https://github.com/andrewtryder/telegram-finance-bot/commit/a4304875afb706224636079ae8cf68784cc24cfd))
+
 ## [0.5.0](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.4.0...telegram-finance-bot-v0.5.0) (2026-07-19)
 
 
