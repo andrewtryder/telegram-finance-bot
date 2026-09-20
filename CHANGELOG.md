@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.5.2](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.1...telegram-finance-bot-v0.5.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **deps:** bump anyio 4.14.1-&gt;4.14.2 to patch critical CVEs ([#64](https://github.com/andrewtryder/telegram-finance-bot/issues/64)) ([6d8baec](https://github.com/andrewtryder/telegram-finance-bot/commit/6d8baecd446a596947f3abeaa4d62165db312d3b)), closes [#63](https://github.com/andrewtryder/telegram-finance-bot/issues/63)
+
 ## [0.5.1](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.0...telegram-finance-bot-v0.5.1) (2026-08-31)
 
 
