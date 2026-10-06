@@ -107,7 +107,7 @@ typing-extensions==4.16.0
     #   beautifulsoup4
 tzlocal==5.4.4
     # via apscheduler
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
 websockets==16.0
     # via yfinance
