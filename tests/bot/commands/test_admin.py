@@ -32,7 +32,7 @@ def mock_update():
     update.message = AsyncMock(spec=Message)
     update.message.text = "/admin"
     update.message.reply_text = AsyncMock()
-    update.effective_message = AsyncMock(spec=Message)
+    update.effective_message = update.message
     update.effective_message.chat_id = 12345
     update.effective_chat = MagicMock(spec=Chat)
     update.effective_chat.id = 12345

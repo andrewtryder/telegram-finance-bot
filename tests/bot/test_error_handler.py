@@ -100,10 +100,11 @@ async def test_error_handler_notifies_honeybadger_for_other_errors(mock_context)
     update.effective_chat.type = "private"
     update.effective_user = MagicMock()
     update.effective_user.id = 42
-    update.effective_message = MagicMock()
+    update.effective_message = AsyncMock(spec=Message)
     update.effective_message.text = "/stock AAPL"
-    update.message = AsyncMock(spec=Message)
-    update.message.reply_text = AsyncMock()
+    update.effective_message.reply_text = AsyncMock()
+    update.edited_message = update.effective_message
+    update.message = None
 
     with (
         patch("bot.main.notify_honeybadger") as notify,
@@ -120,4 +121,6 @@ async def test_error_handler_notifies_honeybadger_for_other_errors(mock_context)
         user_id=42,
         message_text="/stock AAPL",
     )
-    update.message.reply_text.assert_awaited_once()
+    update.effective_message.reply_text.assert_awaited_once_with(
+        "An unexpected error occurred. Please try again later."
+    )

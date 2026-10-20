@@ -22,15 +22,19 @@ def _require_user_id(update: Update) -> int | None:
 @command_guard
 @send_action(ChatAction.TYPING)
 async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text if update.message else "/watchlist"
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /watchlist update without an effective message")
+        return
+
+    command_text = message.text or "/watchlist"
     user_id = _require_user_id(update)
     if user_id is None:
-        if update.message:
-            await update.message.reply_text(
-                "Watchlists are personal and need your Telegram user identity. "
-                "If you are posting as an anonymous admin, unhide your identity and try again.",
-                parse_mode="HTML",
-            )
+        await message.reply_text(
+            "Watchlists are personal and need your Telegram user identity. "
+            "If you are posting as an anonymous admin, unhide your identity and try again.",
+            parse_mode="HTML",
+        )
         return
 
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
@@ -40,7 +44,7 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         symbols = watchlist_list(user_id)
         if not symbols:
-            await update.message.reply_text(
+            await message.reply_text(
                 "Your watchlist is empty. Add one with <code>/watchlist add AAPL</code>",
                 parse_mode="HTML",
             )
@@ -56,15 +60,15 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     lines.append(f"<b>{html.escape(display)}</b>: Data unavailable")
                 else:
                     lines.append(format_compact_quote(info, display, is_crypto=crypto))
-            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+            await message.reply_text("\n".join(lines), parse_mode="HTML")
         except Exception as e:
             logger.error(f"Error showing watchlist: {e}")
-            await update.message.reply_text("Sorry, I couldn't load your watchlist right now.")
+            await message.reply_text("Sorry, I couldn't load your watchlist right now.")
         return
 
     action = args[0]
     if action in ("add", "remove", "rm", "del", "delete") and len(context.args) < 2:
-        await update.message.reply_text(
+        await message.reply_text(
             f"Usage: <code>/watchlist {action} TICKER</code>",
             parse_mode="HTML",
         )
@@ -74,27 +78,27 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ticker = context.args[1]
         resolved = resolve_market_symbol(ticker)
         if resolved is None:
-            await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
+            await message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
             return
         yf_symbol, _display, _is_crypto = resolved
         ok, msg = watchlist_add(user_id, yf_symbol)
         prefix = "✅" if ok else "⚠️"
-        await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
+        await message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
 
     if action in ("remove", "rm", "del", "delete"):
         ticker = context.args[1]
         resolved = resolve_market_symbol(ticker)
         if resolved is None:
-            await update.message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
+            await message.reply_text("Invalid ticker or crypto symbol format.", parse_mode="HTML")
             return
         yf_symbol, _display, _is_crypto = resolved
         ok, msg = watchlist_remove(user_id, yf_symbol)
         prefix = "✅" if ok else "⚠️"
-        await update.message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
+        await message.reply_text(f"{prefix} {html.escape(msg)}", parse_mode="HTML")
         return
 
-    await update.message.reply_text(
+    await message.reply_text(
         "Usage:\n"
         "<code>/watchlist</code> — show quotes\n"
         "<code>/watchlist add AAPL</code>\n"

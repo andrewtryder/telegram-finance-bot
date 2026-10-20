@@ -155,6 +155,11 @@ async def _ignore_non_command_group_messages(update: Update, context: ContextTyp
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /start or /help update without an effective message")
+        return
+
     logger.info(f"/start or /help commanded by {update.effective_user.first_name}")
 
     specific_command = None
@@ -164,6 +169,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = get_help_text(update.effective_user.first_name, specific_command)
 
     if update.effective_chat.type == ChatType.PRIVATE:
-        await update.message.reply_text(help_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
+        await message.reply_text(help_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
     else:
-        await update.message.reply_text(help_text, parse_mode="HTML")
+        await message.reply_text(help_text, parse_mode="HTML")

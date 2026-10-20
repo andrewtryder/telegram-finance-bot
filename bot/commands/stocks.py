@@ -24,11 +24,16 @@ from bot.utils import (
 @command_guard
 @send_action(ChatAction.TYPING)
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /stock update without an effective message")
+        return
+
+    command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
     if not context.args:
-        await update.message.reply_text(
+        await message.reply_text(
             "Please provide a stock ticker. Example: <code>/stock AAPL</code>",
             parse_mode="HTML",
         )
@@ -36,7 +41,7 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ticker = context.args[0]
     if not validate_stock_ticker(ticker):
-        await update.message.reply_text(
+        await message.reply_text(
             "Invalid stock ticker format. Tickers must be up to 16 alphanumeric "
             "characters, dots, dashes, equal signs, or carets.",
             parse_mode="HTML",
@@ -46,17 +51,22 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     yfinance_symbol = to_yfinance_stock(ticker)
 
     text = await get_quote_formatted(yfinance_symbol, display_symbol=ticker.upper(), is_crypto=False)
-    await update.message.reply_text(text, parse_mode="HTML")
+    await message.reply_text(text, parse_mode="HTML")
 
 
 @command_guard
 @send_action(ChatAction.TYPING)
 async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /stockinfo update without an effective message")
+        return
+
+    command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
     if not context.args:
-        await update.message.reply_text(
+        await message.reply_text(
             "Please provide a stock ticker. Example: <code>/stockinfo AAPL</code>",
             parse_mode="HTML",
         )
@@ -64,7 +74,7 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ticker = context.args[0]
     if not validate_stock_ticker(ticker):
-        await update.message.reply_text(
+        await message.reply_text(
             "Invalid stock ticker format. Tickers must be up to 16 alphanumeric "
             "characters, dots, dashes, equal signs, or carets.",
             parse_mode="HTML",
@@ -76,7 +86,7 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         info = await _get_yfinance_info(yfinance_symbol)
         if not info or not (info.get("longName") or info.get("shortName")):
-            await update.message.reply_text(
+            await message.reply_text(
                 f"Could not find company info for {html.escape(yfinance_symbol)}.",
                 parse_mode="HTML",
             )
@@ -124,21 +134,26 @@ async def stockinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         lines.extend(["", "📝 <b>Summary</b>", f"<i>{escaped_summary}</i>"])
 
-        await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+        await message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Error fetching info for {yfinance_symbol}: {e}")
-        await update.message.reply_text("Sorry, I couldn't fetch info for that symbol right now.")
+        await message.reply_text("Sorry, I couldn't fetch info for that symbol right now.")
 
 
 @command_guard
 @send_action(ChatAction.TYPING)
 async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /stocknews update without an effective message")
+        return
+
+    command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
     if not context.args:
-        await update.message.reply_text(
+        await message.reply_text(
             "Please provide a stock ticker. Example: <code>/stocknews AAPL</code>",
             parse_mode="HTML",
         )
@@ -146,7 +161,7 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ticker = context.args[0]
     if not validate_stock_ticker(ticker):
-        await update.message.reply_text(
+        await message.reply_text(
             "Invalid stock ticker format. Tickers must be up to 16 alphanumeric "
             "characters, dots, dashes, equal signs, or carets.",
             parse_mode="HTML",
@@ -158,7 +173,7 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         news_items = await _get_yfinance_news(yfinance_symbol)
         if not news_items:
-            await update.message.reply_text(
+            await message.reply_text(
                 f"No recent news found for {html.escape(yfinance_symbol)}.",
                 parse_mode="HTML",
             )
@@ -182,21 +197,26 @@ async def stocknews(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 lines.append(f"<b>{idx}.</b> {escaped_title}")
 
-        await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+        await message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Error fetching news for {yfinance_symbol}: {e}")
-        await update.message.reply_text("Sorry, I couldn't fetch news for that symbol right now.")
+        await message.reply_text("Sorry, I couldn't fetch news for that symbol right now.")
 
 
 @command_guard
 @send_action(ChatAction.TYPING)
 async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /marketcap update without an effective message")
+        return
+
+    command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
     if not context.args:
-        await update.message.reply_text(
+        await message.reply_text(
             "Please provide a stock ticker. Example: <code>/marketcap AAPL</code>",
             parse_mode="HTML",
         )
@@ -204,7 +224,7 @@ async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ticker = context.args[0]
     if not validate_stock_ticker(ticker):
-        await update.message.reply_text(
+        await message.reply_text(
             "Invalid stock ticker format. Tickers must be up to 16 alphanumeric "
             "characters, dots, dashes, equal signs, or carets.",
             parse_mode="HTML",
@@ -216,7 +236,7 @@ async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         info = await _get_yfinance_info(yfinance_symbol)
         if not info or not (info.get("longName") or info.get("shortName")):
-            await update.message.reply_text(
+            await message.reply_text(
                 f"Could not find company info for {html.escape(yfinance_symbol)}.",
                 parse_mode="HTML",
             )
@@ -230,8 +250,8 @@ async def marketcap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escaped_cap = html.escape(market_cap)
 
         text = f"💰 <b>{escaped_name} ({escaped_symbol})</b>\n{DIVIDER}\nMarket Cap: <b>{escaped_cap}</b>"
-        await update.message.reply_text(text, parse_mode="HTML")
+        await message.reply_text(text, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Error fetching market cap for {yfinance_symbol}: {e}")
-        await update.message.reply_text("Sorry, I couldn't fetch data for that symbol right now.")
+        await message.reply_text("Sorry, I couldn't fetch data for that symbol right now.")

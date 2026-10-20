@@ -71,9 +71,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
     notify_honeybadger(context.error, **hb_context)
 
-    if isinstance(update, Update) and update.message:
+    if isinstance(update, Update) and update.effective_message:
         try:
-            await update.message.reply_text("An unexpected error occurred. Please try again later.")
+            await update.effective_message.reply_text("An unexpected error occurred. Please try again later.")
         except Exception as e:
             logger.error(f"Failed to send error message to user: {e}")
 

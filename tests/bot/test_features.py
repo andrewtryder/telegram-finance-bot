@@ -132,6 +132,7 @@ async def test_compare_command(monkeypatch):
     update.effective_user.first_name = "Test"
     update.message.text = "/compare AAPL MSFT"
     update.message.reply_text = AsyncMock()
+    update.effective_message = update.message
     context = MagicMock()
     context.args = ["AAPL", "MSFT"]
     context.bot.send_chat_action = AsyncMock()
