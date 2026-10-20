@@ -98,9 +98,61 @@ def init_honeybadger() -> bool:
     return True
 
 
+def is_network_timeout(error: BaseException | None) -> bool:
+    """Return True if the error represents a transient network timeout."""
+    if error is None:
+        return False
+
+    candidates = [error]
+    if getattr(error, "__cause__", None):
+        candidates.append(error.__cause__)
+    if getattr(error, "__context__", None):
+        candidates.append(error.__context__)
+
+    for err in candidates:
+        if err is None:
+            continue
+        err_type = type(err)
+        name = err_type.__name__
+
+        if isinstance(err, TimeoutError):
+            return True
+        if name in ("TimedOut", "NetworkTimeout") or "Timeout" in name:
+            return True
+
+        try:
+            from telegram.error import NetworkError, TimedOut
+
+            if isinstance(err, TimedOut):
+                return True
+            if isinstance(err, NetworkError) and ("timeout" in str(err).lower() or "timed out" in str(err).lower()):
+                return True
+        except ImportError:
+            pass
+
+        try:
+            import httpx
+
+            if isinstance(err, httpx.TimeoutException):
+                return True
+        except ImportError:
+            pass
+
+        msg = str(err).lower()
+        if "timed out" in msg or "timeout" in msg:
+            if any(k in msg for k in ("network", "connect", "read", "pool", "socket", "request")):
+                return True
+
+    return False
+
+
 def notify_honeybadger(error: BaseException | None, **context) -> None:
     """Report an exception to Honeybadger when configured."""
     if not HONEYBADGER_API_KEY or error is None:
+        return
+
+    if is_network_timeout(error):
+        logger.debug(f"Skipping Honeybadger notification for network timeout: {error}")
         return
 
     try:
