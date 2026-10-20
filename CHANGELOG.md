@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.5.3](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.2...telegram-finance-bot-v0.5.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* ignore network timeouts in honeybadger and consolidate dependabot updates ([#73](https://github.com/andrewtryder/telegram-finance-bot/issues/73)) ([0d48366](https://github.com/andrewtryder/telegram-finance-bot/commit/0d483664a52ed3131ece68f1ad9a3fb503422e8c))
+
 ## [0.5.2](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.1...telegram-finance-bot-v0.5.2) (2026-09-20)
 
 
