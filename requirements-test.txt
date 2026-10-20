@@ -18,7 +18,7 @@ iniconfig==2.3.0
     # via pytest
 nodeenv==1.10.0
     # via pre-commit
-packaging==26.2
+packaging==26.3
     # via
     #   -c requirements.txt
     #   pytest
@@ -42,17 +42,17 @@ pytest==9.1.1
     #   pytest-mock
 pytest-asyncio==1.4.0
     # via -r requirements-test.in
-pytest-mock==3.15.1
+pytest-mock==3.16.0
     # via -r requirements-test.in
-python-discovery==1.4.3
+python-discovery==1.6.4
     # via virtualenv
 pyyaml==6.0.3
     # via pre-commit
-ruff==0.16.6
+ruff==0.16.10
     # via -r requirements-test.in
 typing-extensions==4.16.0
     # via
     #   -c requirements.txt
     #   pytest-asyncio
-virtualenv==21.5.1
+virtualenv==21.14.11
     # via pre-commit
