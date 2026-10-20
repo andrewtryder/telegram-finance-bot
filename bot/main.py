@@ -25,7 +25,13 @@ from bot.commands import (
     stocknews,
     watchlist,
 )
-from bot.config import TELEGRAM_BOT_TOKEN, init_honeybadger, logger, notify_honeybadger
+from bot.config import (
+    TELEGRAM_BOT_TOKEN,
+    init_honeybadger,
+    is_network_timeout,
+    logger,
+    notify_honeybadger,
+)
 from bot.jobs import check_price_alerts_job, log_metrics_job
 from bot.metrics import record_error, snapshot
 from bot.storage import init_storage
@@ -43,6 +49,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             "Ensure only one instance is running (e.g. stop local bots while Railway is up, "
             "and keep Railway replicas at 1)."
         )
+        return
+
+    # Transient network timeouts are normal during long-polling / network requests.
+    if is_network_timeout(context.error):
+        logger.warning(f"Telegram network timeout encountered: {context.error}")
         return
 
     record_error()

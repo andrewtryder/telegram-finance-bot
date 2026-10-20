@@ -33,6 +33,63 @@ async def test_error_handler_skips_honeybadger_for_conflict(mock_context):
 
 
 @pytest.mark.asyncio
+async def test_error_handler_skips_honeybadger_for_timed_out(mock_context):
+    from telegram.error import TimedOut
+
+    mock_context.error = TimedOut("Timed out")
+
+    with (
+        patch("bot.main.notify_honeybadger") as notify,
+        patch("bot.main.record_error") as record,
+        patch("bot.main.logger") as logger,
+    ):
+        await error_handler(None, mock_context)
+
+    notify.assert_not_called()
+    record.assert_not_called()
+    logger.warning.assert_called_once()
+    assert "network timeout" in logger.warning.call_args.args[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_error_handler_skips_honeybadger_for_httpx_timeout(mock_context):
+    import httpx
+
+    mock_context.error = httpx.ReadTimeout("Read timed out")
+
+    with (
+        patch("bot.main.notify_honeybadger") as notify,
+        patch("bot.main.record_error") as record,
+        patch("bot.main.logger") as logger,
+    ):
+        await error_handler(None, mock_context)
+
+    notify.assert_not_called()
+    record.assert_not_called()
+    logger.warning.assert_called_once()
+    assert "network timeout" in logger.warning.call_args.args[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_error_handler_skips_honeybadger_for_custom_network_timeout(mock_context):
+    class NetworkTimeout(Exception):
+        pass
+
+    mock_context.error = NetworkTimeout("connection timed out")
+
+    with (
+        patch("bot.main.notify_honeybadger") as notify,
+        patch("bot.main.record_error") as record,
+        patch("bot.main.logger") as logger,
+    ):
+        await error_handler(None, mock_context)
+
+    notify.assert_not_called()
+    record.assert_not_called()
+    logger.warning.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_error_handler_notifies_honeybadger_for_other_errors(mock_context):
     err = RuntimeError("boom")
     mock_context.error = err
