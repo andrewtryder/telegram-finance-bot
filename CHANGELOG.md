@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.5.4](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.3...telegram-finance-bot-v0.5.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* handle edited command messages ([d95ee48](https://github.com/andrewtryder/telegram-finance-bot/commit/d95ee48b2d94b6a7f88bdbca3d6560cf75f7bbb7))
+* handle edited command messages ([fce3e11](https://github.com/andrewtryder/telegram-finance-bot/commit/fce3e1175c2f6f85ef08ba208d312fe0ca754a0f))
+
 ## [0.5.3](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.2...telegram-finance-bot-v0.5.3) (2026-10-20)
 
 
