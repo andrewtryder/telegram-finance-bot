@@ -23,6 +23,7 @@ def mock_update():
     update.effective_user.first_name = "TestUser"
     update.message = AsyncMock(spec=Message)
     update.message.reply_text = AsyncMock()
+    update.effective_message = update.message
     update.effective_chat = MagicMock(spec=Chat)
     update.effective_chat.id = 12345
     update.effective_chat.type = ChatType.PRIVATE

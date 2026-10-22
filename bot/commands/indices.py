@@ -14,7 +14,12 @@ from bot.utils import DIVIDER, _trend_arrow, command_guard, send_action
 @send_action(ChatAction.TYPING)
 async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get the current levels of major market indices."""
-    command_text = update.message.text
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /indices update without an effective message")
+        return
+
+    command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
     blocks = [f"📊 <b>Major Market Indices</b>\n{DIVIDER}"]
@@ -80,4 +85,4 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error fetching indices: {e}")
         response_text = "Sorry, I couldn't fetch the indices right now."
 
-    await update.message.reply_text(response_text, parse_mode="HTML")
+    await message.reply_text(response_text, parse_mode="HTML")

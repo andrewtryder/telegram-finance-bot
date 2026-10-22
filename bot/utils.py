@@ -27,6 +27,11 @@ def command_guard(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         from bot.metrics import record_command
 
+        message = update.effective_message
+        if message is None:
+            logger.warning(f"Ignoring {func.__name__} update without an effective message")
+            return
+
         if not update.effective_chat or not update.effective_user:
             record_command(func.__name__)
             return await func(update, context, *args, **kwargs)
@@ -38,8 +43,7 @@ def command_guard(func):
         if ALLOWED_CHAT_IDS and 0 not in ALLOWED_CHAT_IDS:
             if chat_id not in ALLOWED_CHAT_IDS:
                 logger.warning(f"Unauthorized chat attempt: Chat ID {chat_id}")
-                if update.message:
-                    await update.message.reply_text("Access denied. This bot is private.")
+                await message.reply_text("Access denied. This bot is private.")
                 return
         else:
             # 2. Enforce rate limiting if no allowlist
@@ -49,8 +53,7 @@ def command_guard(func):
                 last_time = USER_COOLDOWNS[key]
                 if now - last_time < COOLDOWN_SECONDS:
                     logger.warning(f"Rate limit hit for User {user_id} in Chat {chat_id}")
-                    if update.message:
-                        await update.message.reply_text("Too many requests. Please wait a moment.")
+                    await message.reply_text("Too many requests. Please wait a moment.")
                     return
             USER_COOLDOWNS[key] = now
 
@@ -66,8 +69,9 @@ def send_action(action):
     def decorator(func):
         @wraps(func)
         async def command_func(update, context, *args, **kwargs):
-            if update.message:
-                await context.bot.send_chat_action(chat_id=update.effective_message.chat_id, action=action)
+            message = update.effective_message
+            if message:
+                await context.bot.send_chat_action(chat_id=message.chat_id, action=action)
             return await func(update, context, *args, **kwargs)
 
         return command_func

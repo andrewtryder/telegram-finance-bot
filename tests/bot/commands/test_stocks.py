@@ -24,7 +24,7 @@ def mock_update():
     update.effective_user.id = 11111
     update.message = AsyncMock(spec=Message)
     update.message.reply_text = AsyncMock()
-    update.effective_message = AsyncMock(spec=Message)
+    update.effective_message = update.message
     update.effective_message.chat_id = 12345
     update.effective_chat = MagicMock(spec=Chat)
     update.effective_chat.id = 12345
@@ -52,6 +52,23 @@ async def test_stock_command_with_args(mock_get_quote, mock_update, mock_context
     mock_get_quote.assert_called_once_with("AAPL", display_symbol="AAPL", is_crypto=False)
     assert mock_update.message.reply_text.call_count == 1
     mock_update.message.reply_text.assert_any_call("The current price of AAPL is $150.5", parse_mode="HTML")
+
+
+@pytest.mark.asyncio
+@patch("bot.commands.stocks.get_quote_formatted", new_callable=AsyncMock)
+async def test_stock_command_handles_edited_message(mock_get_quote, mock_update, mock_context):
+    edited_message = mock_update.effective_message
+    edited_message.text = "/stock tsla"
+    mock_update.edited_message = edited_message
+    mock_update.message = None
+    mock_context.args = ["tsla"]
+    mock_get_quote.return_value = "The current price of TSLA is $250.0"
+
+    await main.stock(mock_update, mock_context)
+
+    mock_get_quote.assert_awaited_once_with("TSLA", display_symbol="TSLA", is_crypto=False)
+    edited_message.reply_text.assert_awaited_once_with("The current price of TSLA is $250.0", parse_mode="HTML")
+    mock_context.bot.send_chat_action.assert_awaited_once()
 
 
 @pytest.mark.asyncio

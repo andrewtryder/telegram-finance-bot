@@ -14,23 +14,27 @@ def _is_admin(user_id: int | None) -> bool:
 @command_guard
 @send_action(ChatAction.TYPING)
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command_text = update.message.text if update.message else "/admin"
+    message = update.effective_message
+    if message is None:
+        logger.warning("Ignoring /admin update without an effective message")
+        return
+
+    command_text = message.text or "/admin"
     user = update.effective_user
     logger.info(f"Command received: {command_text} from {user.first_name if user else 'unknown'}")
 
     if not _is_admin(user.id if user else None):
-        if update.message:
-            await update.message.reply_text("Access denied.", parse_mode="HTML")
+        await message.reply_text("Access denied.", parse_mode="HTML")
         return
 
     args = [a.lower() for a in (context.args or [])]
     action = args[0] if args else "stats"
 
     if action in ("stats", "status", "metrics"):
-        await update.message.reply_text(format_stats_html(), parse_mode="HTML")
+        await message.reply_text(format_stats_html(), parse_mode="HTML")
         return
 
-    await update.message.reply_text(
+    await message.reply_text(
         "Usage: <code>/admin stats</code>",
         parse_mode="HTML",
     )
