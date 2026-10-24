@@ -8,7 +8,7 @@ cfgv==3.5.0
     # via pre-commit
 distlib==0.4.3
     # via virtualenv
-filelock==3.29.5
+filelock==4.2.1
     # via
     #   python-discovery
     #   virtualenv
@@ -22,10 +22,10 @@ packaging==26.3
     # via
     #   -c requirements.txt
     #   pytest
+    #   virtualenv
 platformdirs==4.10.0
     # via
     #   -c requirements.txt
-    #   python-discovery
     #   virtualenv
 pluggy==1.6.0
     # via pytest
@@ -54,5 +54,5 @@ typing-extensions==4.16.0
     # via
     #   -c requirements.txt
     #   pytest-asyncio
-virtualenv==21.14.11
+virtualenv==21.14.13
     # via pre-commit

@@ -12,7 +12,7 @@ beautifulsoup4==4.15.0
     # via yfinance
 cachetools==7.2.0
     # via -r requirements.in
-certifi==2026.6.17
+certifi==2026.10.19
     # via
     #   curl-cffi
     #   httpcore
@@ -67,7 +67,7 @@ pandas==3.0.3
     # via yfinance
 peewee==4.1.1
     # via yfinance
-pillow==12.3.0
+pillow==13.0.0
     # via matplotlib
 platformdirs==4.10.0
     # via yfinance
