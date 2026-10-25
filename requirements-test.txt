@@ -22,10 +22,10 @@ packaging==26.3
     # via
     #   -c requirements.txt
     #   pytest
+    #   virtualenv
 platformdirs==4.10.0
     # via
     #   -c requirements.txt
-    #   python-discovery
     #   virtualenv
 pluggy==1.6.0
     # via pytest
@@ -42,7 +42,7 @@ pytest==9.1.1
     #   pytest-mock
 pytest-asyncio==1.4.0
     # via -r requirements-test.in
-pytest-mock==3.16.0
+pytest-mock==3.17.0
     # via -r requirements-test.in
 python-discovery==1.6.4
     # via virtualenv
