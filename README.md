@@ -1,6 +1,6 @@
 <!-- OpenGraph / Social Preview -->
 <meta property="og:title" content="Telegram Financial Bot" />
-<meta property="og:description" content="A Telegram bot for stock, crypto, and index quotes, plus watchlists, charts, and price alerts via yfinance." />
+<meta property="og:description" content="A lightweight, stateless Telegram bot for stock quotes with pre-market and after-hours pricing, market indices, crypto, and charts." />
 <meta property="og:image" content="https://raw.githubusercontent.com/andrewtryder/telegram-finance-bot/main/docs/screenshot.png" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://github.com/andrewtryder/telegram-finance-bot" />
@@ -10,70 +10,62 @@
 [![CI/CD Pipeline](https://github.com/andrewtryder/telegram-finance-bot/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/andrewtryder/telegram-finance-bot/actions/workflows/ci-cd.yml)
 [![License](https://img.shields.io/github/license/andrewtryder/telegram-finance-bot)](https://github.com/andrewtryder/telegram-finance-bot/blob/main/LICENSE)
 
-A Telegram bot for stock, crypto, and index quotes via yfinance (Yahoo Finance), with personal watchlists, charts, and chat-owned price alerts. Runs on **Cloudflare Workers** (serverless Python, zero ongoing costs) or **Railway / Docker / local** (full Python runtime with polling or webhooks).
+A fast, lightweight, and completely **stateless** Telegram finance bot providing real-time and extended-hours stock quotes, major market indices, U.S. market futures, cryptocurrency quotes, symbol search, company fundamentals, news, and charts.
+
+Runs serverless on **Cloudflare Workers Free** (Python runtime, zero ongoing hosting costs) or on **Railway / Docker / local** (webhooks or polling).
 
 ![Telegram Financial Bot in action](https://raw.githubusercontent.com/andrewtryder/telegram-finance-bot/main/docs/screenshot.png)
 
 ## Features
 
-- `/stock` `/stockinfo` `/stocknews` `/marketcap` — quotes and company data
-- `/crypto` `/indices` — crypto pairs and major market indices
-- `/search` — find Yahoo Finance symbols
-- `/compare` — side-by-side quotes (2–4 tickers)
-- `/chart` — closing-price chart PNG
-- `/watchlist` — personal list (max 10), shared across your chats
-- `/alert` — one-shot price alerts (max 20 per chat); chat-owned — fire into the chat; anyone there can list or remove
-- `/admin stats` — owner-only in-memory command/error counts (`ADMIN_USER_IDS`)
+- `/stock AAPL` — Stock quote with **pre-market and after-hours trading**, session indicators, and timestamps
+- `/crypto BTC` — 24/7 cryptocurrency quotes and trading ranges
+- `/indices` — Major cash market indices (S&P 500, Dow Jones, Nasdaq) and active U.S. market futures
+- `/compare AAPL MSFT` — Side-by-side quotes for 2–4 securities
+- `/chart AAPL [1mo|3mo|6mo|1y]` — Dependency-free closing-price line chart PNG
+- `/search Apple` — Yahoo Finance symbol lookup
+- `/stockinfo AAPL` — Company profile, sector, industry, and valuation metrics
+- `/stocknews AAPL` — Recent market news headlines
+- `/marketcap AAPL` — Market capitalization
+- `/admin stats` — In-memory command and error statistics (authorized admins only)
+
+> [!NOTE]
+> Persistent watchlists and price alerts have been retired to keep the bot completely stateless, instant, and free of database requirements. Historical data on previously used external databases (D1 or Railway SQLite volumes) is not automatically deleted and remains safely preserved externally until manually removed by the owner.
 
 ---
 
-## Supported Deployment Configurations
+## Deployment Matrix
 
-The bot supports both serverless (Cloudflare Workers) and containerized/process (Railway, Docker, local) environments through orthogonal configuration variables:
+The bot is entirely stateless and requires **no database, no persistent volumes, no cron jobs, and no background workers**:
 
-| Config | Environment | `BOT_MODE` | `STORAGE_BACKEND` | `WATCHLIST_ENABLED` | `ALERTS_ENABLED` | Description |
-|:---:|---|:---:|:---:|:---:|:---:|---|
-| **A** | Cloudflare Workers | `webhook` | `none` | `false` | `false` | **Default / Free Tier:** Completely stateless, zero database required. |
-| **B** | Cloudflare Workers | `webhook` | `d1` | `true` | `false` | Serverless with Cloudflare D1 for personal watchlists. |
-| **C** | Cloudflare Workers | `webhook` | `d1` | `true` | `true` | Full serverless with D1 storage and 1-minute Cron Trigger for alerts. |
-| **D** | Railway / Docker | `webhook` | `sqlite` | `true` | `true` | Production webhook with persistent volume (`/app/data`) and SQLite. |
-| **E** | Railway / Docker | `polling` | `sqlite` | `true` | `true` | Production long polling with SQLite persistence (1 replica). |
-| **F** | Local / Dev | `polling` | `none` | `false` | `false` | Rapid local testing without database files or public HTTPS URLs. |
-
-Unsupported combinations (such as `STORAGE_BACKEND=d1` on Python or `STORAGE_BACKEND=sqlite` on Cloudflare Workers) fail fast at startup with actionable error messages.
+| Target | Transport | Database | Recommended | Notes |
+|---|:---:|:---:|:---:|---|
+| **Cloudflare Workers** | Webhook | None | **Yes (Primary)** | Zero cost on Workers Free tier. No persistent container. |
+| **Railway Serverless** | Webhook | None | Optional | Automatically sleeps when idle (~5m inactive). |
+| **Railway Standard** | Webhook | None | Optional | Stays awake; may incur continuous compute costs. |
+| **Railway** | Polling | None | Optional | Requires an always-on process (not recommended for cost). |
+| **Local / Docker** | Webhook | None | Supported | For local webhook testing (e.g. via ngrok or tunnel). |
+| **Local / Dev** | Polling | None | Supported | Fastest way to run locally without public HTTPS URLs. |
 
 ---
 
-## Quickstart: Local Development
+## Extended-Hours Pricing (Pre-Market & After-Hours)
 
-1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the bot token.
-2. Clone the repository and copy the environment template:
-   ```bash
-   cp .env.example .env
-   ```
-3. Set `TELEGRAM_BOT_TOKEN` in `.env`.
-4. Run locally with [uv](https://docs.astral.sh/uv/) and Python 3.12+:
+The bot provides extended-hours pricing whenever the market data provider makes it available:
 
-   ```bash
-   # Config F (Stateless polling)
-   uv sync --locked --no-dev
-   BOT_MODE=polling STORAGE_BACKEND=none WATCHLIST_ENABLED=false ALERTS_ENABLED=false \
-     uv run --locked --no-dev python -m bot.main
-   ```
-
-   Or run with SQLite storage (Config E):
-   ```bash
-   uv run --locked --no-dev python -m bot.main
-   ```
-
-> [!WARNING]
-> Use **exactly one poller** per bot token. Never run local polling simultaneously with production polling or while a Telegram webhook is active.
+- **Pre-Market:** Displays active pre-market prices (~4:00 AM–9:30 AM ET). Price change and percentage are calculated against the previous regular-session close.
+- **Regular Session:** Displays live regular prices (~9:30 AM–4:00 PM ET) prominently with day range, 52-week range, volume, and open/close levels.
+- **After-Hours:** Displays active post-market prices (~4:00 PM–8:00 PM ET). Price change and percentage are calculated against the most recent completed regular close.
+- **Market Closed / Weekends:** Displays the final regular close, along with the most recent after-hours closing trade when available.
+- **Anti-Stale Safeguards:** Stale pre-market trades from earlier sessions are never displayed as live quotes.
+- **Cash Indices vs. Futures:** Cash indices (`^GSPC`, `^DJI`, `^IXIC`) do not have extended-hours trading and are clearly labeled as cash indices. Active U.S. index futures (`ES=F`, `NQ=F`, `YM=F`) are displayed in a separate section.
+- **Cryptocurrency:** Crypto trades continuously 24/7/365 and is labeled accordingly without pre/post-market sessions.
 
 ---
 
-## Cloudflare Workers Deployment
+## Primary Deployment: Cloudflare Workers (Free)
 
-Cloudflare Workers runs the bot as a pure Python Worker using Cloudflare's Python runtime (`python_workers`). It responds instantly to Telegram webhooks without requiring long-running server instances or container billing.
+The bot runs as a pure Python Worker using Cloudflare's `python_workers` compatibility runtime. It executes on demand in response to Telegram webhooks with zero database overhead.
 
 ### 1. Prerequisites
 
@@ -91,11 +83,9 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 
 The webhook secret must contain 1–256 ASCII characters (`[A-Za-z0-9_-]`). Optionally set `ALLOWED_CHAT_IDS` and `ADMIN_USER_IDS` secrets as comma-separated integers.
 
-For local Worker emulation, store these in `.dev.vars` (never committed to git) and run `npx wrangler dev`.
+For local emulation: create `.dev.vars` (never committed to git) and run `npx wrangler dev`.
 
-### 3. Deploy Stateless (Config A)
-
-By default, `wrangler.jsonc` is configured for **Config A** (`BOT_MODE=webhook`, `STORAGE_BACKEND=none`, watchlists/alerts disabled).
+### 3. Deploy Worker
 
 Deploy to Cloudflare:
 
@@ -103,145 +93,123 @@ Deploy to Cloudflare:
 npx wrangler deploy
 ```
 
-Note your worker URL: `https://<worker-name>.<subdomain>.workers.dev`.
+Your Worker URL will be: `https://<worker-name>.<subdomain>.workers.dev`.
 
-### 4. Optional: Enable D1 Persistence & Alerts (Config B & C)
+### 4. Register Telegram Webhook
 
-To enable watchlists and price alerts on Cloudflare:
-
-1. **Create the D1 database:**
-   ```bash
-   npx wrangler d1 create telegram-finance-bot
-   ```
-   Copy the `database_id` from the output.
-
-2. **Apply migrations:**
-   ```bash
-   npx wrangler d1 migrations apply telegram-finance-bot --remote
-   ```
-
-3. **Update `wrangler.jsonc`:**
-   Add the D1 binding and enable feature flags:
-   ```jsonc
-   {
-     "vars": {
-       "BOT_MODE": "webhook",
-       "STORAGE_BACKEND": "d1",
-       "WATCHLIST_ENABLED": "true",
-       "ALERTS_ENABLED": "true"
-     },
-     "d1_databases": [
-       {
-         "binding": "DB",
-         "database_name": "telegram-finance-bot",
-         "database_id": "<database-id-from-step-1>",
-         "migrations_dir": "cloudflare/migrations"
-       }
-     ],
-     "triggers": {
-       "crons": ["* * * * *"]
-     }
-   }
-   ```
-   *(Omit `"triggers"` if `ALERTS_ENABLED="false"`.)*
-
-4. **Redeploy:**
-   ```bash
-   npx wrangler deploy
-   ```
-
----
-
-## Webhook Management & Switching
-
-Use the built-in management CLI (`bot.manage_webhook`) to register, inspect, or delete your Telegram webhook safely.
-
-### Register a Webhook
-
-Set environment variables in your shell or private `.env` and register:
+Use the built-in management CLI to register your Worker endpoint with Telegram:
 
 ```bash
 export TELEGRAM_BOT_TOKEN="<bot-token>"
 export TELEGRAM_WEBHOOK_SECRET="<webhook-secret>"
-export WEBHOOK_URL="https://<worker-host>/webhook"
+export WEBHOOK_URL="https://<worker-name>.<subdomain>.workers.dev/webhook"
 
 python -m bot.manage_webhook register
 ```
 
-### Inspect Webhook Status
-
+To inspect webhook delivery status:
 ```bash
 python -m bot.manage_webhook info
 ```
 
-Displays registered URL, custom certificate status, pending update count, and recent delivery error messages.
+---
 
-### Remove Webhook (Switching to Polling)
+## Optional Deployment: Railway & Serverless App-Sleeping
 
-Before starting a polling instance on Railway or locally, delete the webhook from Telegram:
+Railway can run the stateless bot via its Python HTTP webhook server (`bot.webhook`).
 
-```bash
-python -m bot.manage_webhook remove
+### 1. Deploy via Webhook Mode
+
+1. Deploy from this repository to Railway.
+2. Set environment variables:
+   - `BOT_MODE=webhook`
+   - `TELEGRAM_BOT_TOKEN=...`
+   - `TELEGRAM_WEBHOOK_SECRET=...`
+3. Generate a Railway public domain (e.g. `https://mybot.up.railway.app`).
+4. Register the webhook with Telegram:
+   ```bash
+   WEBHOOK_URL="https://mybot.up.railway.app/webhook" python -m bot.manage_webhook register
+   ```
+
+### 2. Enabling Railway Serverless / App-Sleeping
+
+In Railway Service Settings, enable **App Sleeping / Serverless**.
+
+- **How it works:** When no requests arrive for ~5 minutes, Railway suspends the container to 0 replicas, reducing billable CPU/memory time.
+- **Zero background traffic:** The bot has no background pollers, metrics-push loops, or alert crons while idle, allowing the container to sleep uninterrupted.
+- **Cold starts:** The first Telegram request to a sleeping container may take a few seconds to boot up. Telegram's automated webhook retries ensure updates are delivered reliably.
+
+### 3. Optional Long Polling
+
+For environments where continuous operation is explicitly acceptable:
+
+```env
+BOT_MODE=polling
+TELEGRAM_BOT_TOKEN=...
 ```
 
-Telegram will reject polling (`getUpdates`) calls if a webhook is currently active.
+> [!WARNING]
+> Before running in polling mode, remove any registered webhook with `python -m bot.manage_webhook remove`. Telegram will reject polling while a webhook is active. Ensure exactly 1 replica is running.
 
 ---
 
-## Railway & Docker Deployment
+## Quickstart: Local Development
 
-### Docker
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token.
+2. Clone repository and install dependencies with [uv](https://docs.astral.sh/uv/):
+   ```bash
+   uv sync --locked
+   ```
+3. Copy environment configuration:
+   ```bash
+   cp .env.example .env
+   ```
+4. Set `TELEGRAM_BOT_TOKEN` in `.env`.
+5. Run locally in polling mode:
+   ```bash
+   BOT_MODE=polling uv run python -m bot.main
+   ```
 
-Run with a persistent SQLite volume:
+---
+
+## Moving the Telegram Webhook Between Deployments
+
+Use the included helper CLI (`bot.manage_webhook`) to seamlessly switch transports:
+
+- **Check status:** `python -m bot.manage_webhook info`
+- **Register Cloudflare:** `WEBHOOK_URL="https://<worker>.workers.dev/webhook" python -m bot.manage_webhook register`
+- **Register Railway:** `WEBHOOK_URL="https://<railway-domain>/webhook" python -m bot.manage_webhook register`
+- **Switch to Polling:** `python -m bot.manage_webhook remove`
+
+Always ensure the previous instance is stopped before starting a poller.
+
+---
+
+## Testing & Verification
+
+Run the complete test suite:
 
 ```bash
-docker pull ghcr.io/andrewtryder/telegram-finance-bot:latest
-docker run -d \
-  --name telegram-finance-bot \
-  -v bot-data:/app/data \
-  --env-file .env \
-  ghcr.io/andrewtryder/telegram-finance-bot:latest
+uv run pytest
 ```
 
-### Deploy on Railway
+Run linter and formatter checks:
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/6k39OM?referralCode=cPw57c&utm_medium=integration&utm_source=template&utm_campaign=generic)
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
 
-1. Deploy from this repository.
-2. **For Polling (Config E):**
-   - Ensure Telegram webhook is deleted (`python -m bot.manage_webhook remove`).
-   - Set `BOT_MODE=polling`.
-   - Set `STORAGE_BACKEND=sqlite`.
-   - Mount a persistent volume at `/app/data`.
-   - Keep replicas set to **1** (Telegram allows only one poller per bot token).
-3. **For Webhooks (Config D):**
-   - Set `BOT_MODE=webhook`.
-   - Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
-   - Set `STORAGE_BACKEND=sqlite` with persistent volume `/app/data`.
-   - Generate a Railway domain and register:
-     `WEBHOOK_URL="https://<railway-domain>/webhook" python -m bot.manage_webhook register`
+Validate Cloudflare Worker bundling:
+
+```bash
+npx --yes wrangler@4 deploy --dry-run
+```
 
 ---
 
-## Portability & Operational Notes
+## CI/CD & Security Analysis
 
-- **Database Separation:** Cloudflare D1 and Railway/Docker SQLite are separate storage engines. They do not automatically synchronize. Switching between Railway and Cloudflare starts with an independent database unless manually exported/imported.
-- **Alert Semantics:** On Cloudflare, price alerts are evaluated once per minute by scheduled Cron Triggers using an atomic claim lease (`claimed_at`). If alert delivery succeeds in Telegram but a database acknowledgment times out, at-least-once delivery semantics apply.
-- **Quote Engine:** The Python runtime uses `yfinance`; Cloudflare Workers query Yahoo Finance HTTPS endpoints directly in Python. Minor differences in formatting or rounding may occur. Charts in Cloudflare Workers are rendered using lightweight, pure-Python PNG generation without `matplotlib`.
-- **Update Deduplication:** Telegram webhooks include built-in update deduplication via `processed_updates` (when D1 is bound) or an in-memory cache to prevent duplicate processing during Telegram retries.
-- **Admin Stats:** In webhook environments, `/admin stats` counts represent the in-memory lifetime of the active worker instance.
-
----
-
-## CI/CD & Rollback
-
-- **Validation:** GitHub Actions automatically tests every push and pull request with `pytest`, `ruff check`, `ruff format`, and `wrangler deploy --dry-run`.
-- **Manual Deployment:** Deployments are triggered manually via **GitHub Actions Workflow Dispatch** (`.github/workflows/ci-cd.yml`):
-  - `none`: Validation only, no deployments.
-  - `cloudflare`: Deploys only to Cloudflare Workers (requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`).
-  - `railway`: Deploys only to Railway (requires `RAILWAY_API_TOKEN`).
-- **Worker Rollback:** To instantly roll back Cloudflare Workers to a previous version without redeploying code:
-  ```bash
-  npx wrangler rollback
-  ```
-  If the webhook URL changed during rollback, re-register the endpoint using `python -m bot.manage_webhook register`.
+- **Automated Validation:** Every push and pull request runs `pytest`, `ruff check`, `ruff format`, and `wrangler deploy --dry-run`.
+- **Manual Deployments:** Deployments to Cloudflare or Railway are strictly manual via **Workflow Dispatch** (`none`, `cloudflare`, or `railway`). No credentials are committed or required for tests.
+- **CodeQL Analysis:** GitHub CodeQL scans Python and GitHub Actions workflows. Note that if GitHub's Default CodeQL Setup was previously configured on a branch that contained JavaScript, GitHub's default matrix may attempt to scan JavaScript until this refactor is merged into `main`. Once merged into `main`, GitHub automatically recognizes that zero JavaScript remains and scopes scans to Python and Actions.

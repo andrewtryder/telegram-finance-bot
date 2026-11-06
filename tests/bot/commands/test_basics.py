@@ -16,14 +16,13 @@ from telegram.ext import Application, ContextTypes
 from bot.commands import basics as main
 
 
-def test_help_indicates_disabled_optional_features(monkeypatch):
-    monkeypatch.setattr(main, "WATCHLIST_ENABLED", False)
-    monkeypatch.setattr(main, "ALERTS_ENABLED", False)
+def test_help_indicates_retired_features():
     text = main.get_help_text()
-    assert "/watchlist</b> - Personal watchlist (shared across chats) — disabled" in text
-    assert "/alert</b> - One-shot price alerts (chat-owned) — disabled" in text
-    assert "Currently disabled" in main.get_help_text(specific_command="watchlist")
-    assert "Currently disabled" in main.get_help_text(specific_command="alert")
+    assert "<b>/stock &lt;ticker&gt;</b>" in text
+    assert "/watchlist</b>" not in text
+    assert "/alert</b>" not in text
+    assert "retired" in main.get_help_text(specific_command="watchlist").lower()
+    assert "retired" in main.get_help_text(specific_command="alert").lower()
 
 
 @pytest.fixture

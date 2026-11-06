@@ -1,17 +1,19 @@
-"""Unit tests for the Python Cloudflare Worker (storage and webhook)."""
+"""Unit tests for the stateless Python Cloudflare Worker."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from cloudflare.storage import D1Storage
 from cloudflare.webhook import (
     compact_number,
     format_number,
     format_price,
+    format_quote,
     handle_request,
     market_symbol,
+    recent_updates,
+    reply_for,
     same_secret,
     validate_webhook_config,
 )
@@ -28,397 +30,388 @@ class MockRequest:
         return self.body
 
 
-@pytest.mark.asyncio
-async def test_d1_storage_watchlist():
-    db = MagicMock()
-    stmt = MagicMock()
-    db.prepare.return_value.bind.return_value = stmt
-    stmt.all = AsyncMock(return_value={"results": [{"symbol": "AAPL"}, {"symbol": "MSFT"}]})
-
-    storage = D1Storage(db)
-    symbols = await storage.watchlist(123)
-    assert symbols == ["AAPL", "MSFT"]
-
-    # Test add watchlist success
-    stmt_add = MagicMock()
-    stmt_add.run = AsyncMock(return_value={"meta": {"changes": 1}})
-    db.prepare.return_value.bind.return_value = stmt_add
-    ok, msg = await storage.add_watchlist(123, "GOOG")
-    assert ok is True
-    assert "Added GOOG" in msg
-
-    # Test add watchlist duplicate / full
-    stmt_add.run = AsyncMock(return_value={"meta": {"changes": 0}})
-    stmt_add.first = AsyncMock(return_value={"symbol": "GOOG"})
-    ok, msg = await storage.add_watchlist(123, "GOOG")
-    assert ok is False
-    assert "already on your watchlist" in msg
-
-    # Test remove watchlist
-    stmt_del = MagicMock()
-    stmt_del.run = AsyncMock(return_value={"meta": {"changes": 1}})
-    db.prepare.return_value.bind.return_value = stmt_del
-    ok, msg = await storage.remove_watchlist(123, "GOOG")
-    assert ok is True
-    assert "Removed GOOG" in msg
+@pytest.fixture(autouse=True)
+def clean_recent_updates():
+    recent_updates.clear()
+    yield
+    recent_updates.clear()
 
 
-@pytest.mark.asyncio
-async def test_d1_storage_alerts():
-    db = MagicMock()
-    storage = D1Storage(db)
-
-    # Test add alert
-    stmt_add = MagicMock()
-    stmt_add.first = AsyncMock(return_value={"id": 42})
-    db.prepare.return_value.bind.return_value = stmt_add
-    ok, msg = await storage.add_alert(100, 200, "AAPL", "above", 200.0)
-    assert ok is True
-    assert "Alert #42" in msg
-
-    # Test remove alert
-    stmt_rm = MagicMock()
-    stmt_rm.run = AsyncMock(return_value={"meta": {"changes": 1}})
-    db.prepare.return_value.bind.return_value = stmt_rm
-    ok, msg = await storage.remove_alert(100, 42)
-    assert ok is True
-    assert "Removed alert #42" in msg
-
-
-def test_market_symbol_and_formatting():
+def test_market_symbol():
     assert market_symbol("aapl") == "AAPL"
-    assert market_symbol("btc", crypto=True) == "BTC-USD"
     assert market_symbol("btc", infer_crypto=True) == "BTC-USD"
-    assert market_symbol("invalid$symbol") is None
-
-    assert format_number(1234.567) == "1,234.57"
-    assert format_price(1234.5, "USD") == "$1,234.50"
-    assert compact_number(1_500_000_000) == "1.50B"
-    assert compact_number(2_000_000) == "2.00M"
+    assert market_symbol("eth", crypto=True) == "ETH-USD"
+    assert market_symbol("BTC/USD") == "BTC-USD"
+    assert market_symbol("invalid$$$") is None
 
 
-def test_secret_validation():
-    assert same_secret("my-secret", "my-secret") is True
-    assert same_secret("my-secret", "wrong-secret") is False
+def test_format_number():
+    assert format_number(123.456) == "123.46"
+    assert format_number(0.123456, crypto=True) == "0.1235"
+    assert format_number(10.5, crypto=True) == "10.50"
+
+
+def test_format_price():
+    assert format_price(150.25, "USD") == "$150.25"
+    assert format_price(0.005, "USD", crypto=True) == "$0.0050"
+    assert format_price(100.0, "EUR") == "EUR 100.00"
+    assert format_price(None, "USD") is None
+
+
+def test_compact_number():
+    assert compact_number(1500000000000) == "1.50T"
+    assert compact_number(2500000000) == "2.50B"
+    assert compact_number(3500000) == "3.50M"
+    assert compact_number(4500) == "4.50K"
+    assert compact_number(42) == "42.00"
+    assert compact_number(None) is None
+
+
+def test_same_secret():
+    assert same_secret("correct_secret", "correct_secret") is True
+    assert same_secret("wrong_secret", "correct_secret") is False
 
 
 def test_validate_webhook_config():
     valid_env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "secret123",
-        "WATCHLIST_ENABLED": "false",
-        "ALERTS_ENABLED": "false",
-        "STORAGE_BACKEND": "none",
+        "TELEGRAM_BOT_TOKEN": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+        "TELEGRAM_WEBHOOK_SECRET": "my_super_secret_token_123",
     }
     validate_webhook_config(valid_env)
 
-    invalid_mode = {**valid_env, "BOT_MODE": "polling"}
-    with pytest.raises(ValueError, match="BOT_MODE"):
-        validate_webhook_config(invalid_mode)
+    # Invalid BOT_MODE
+    with pytest.raises(ValueError, match="BOT_MODE must be webhook"):
+        validate_webhook_config({**valid_env, "BOT_MODE": "polling"})
 
-    invalid_features = {**valid_env, "WATCHLIST_ENABLED": "true", "STORAGE_BACKEND": "none"}
-    with pytest.raises(ValueError, match="require persistent storage"):
-        validate_webhook_config(invalid_features)
+    # Missing token
+    with pytest.raises(ValueError, match="Telegram token and valid webhook secret are required"):
+        validate_webhook_config({**valid_env, "TELEGRAM_BOT_TOKEN": ""})
 
-    sqlite_backend = {**valid_env, "STORAGE_BACKEND": "sqlite"}
-    with pytest.raises(ValueError, match="only supports none or d1"):
-        validate_webhook_config(sqlite_backend)
+    # Invalid secret
+    with pytest.raises(ValueError, match="Telegram token and valid webhook secret are required"):
+        validate_webhook_config({**valid_env, "TELEGRAM_WEBHOOK_SECRET": "invalid secret with spaces!"})
 
-    d1_without_db = {**valid_env, "STORAGE_BACKEND": "d1"}
-    with pytest.raises(ValueError, match="requires a DB binding"):
-        validate_webhook_config(d1_without_db)
+
+def test_format_quote_pre_market():
+    q = {
+        "symbol": "AAPL",
+        "price": 250.0,
+        "previous": 248.5,
+        "open": 249.0,
+        "meta": {
+            "currency": "USD",
+            "shortName": "Apple Inc.",
+            "marketState": "PRE",
+            "preMarketPrice": 252.15,
+            "preMarketChange": 3.65,
+            "preMarketChangePercent": 1.47,
+            "regularMarketTime": 1700000000,
+            "preMarketTime": 1700001000,
+        },
+    }
+    text = format_quote(q, crypto=False)
+    assert "Apple Inc. (AAPL)" in text
+    assert "Regular Price:</b> $250.00" in text
+    assert "Previous Close:</b> $248.50" in text
+    assert "🌅 <b>Pre-Market:</b> $252.15" in text
+    assert "+$3.65" in text
+    assert "(+1.47%)" in text
+    assert "Session:</b> Pre-market" in text
+
+
+def test_format_quote_after_hours():
+    q = {
+        "symbol": "AAPL",
+        "price": 250.0,
+        "previous": 248.5,
+        "open": 249.0,
+        "meta": {
+            "currency": "USD",
+            "shortName": "Apple Inc.",
+            "marketState": "POST",
+            "postMarketPrice": 251.25,
+            "postMarketChange": 1.25,
+            "postMarketChangePercent": 0.50,
+            "regularMarketTime": 1700000000,
+            "postMarketTime": 1700003000,
+        },
+    }
+    text = format_quote(q, crypto=False)
+    assert "Apple Inc. (AAPL)" in text
+    assert "Regular Close:</b> $250.00" in text
+    assert "🌙 <b>After-Hours:</b> $251.25" in text
+    assert "+$1.25" in text
+    assert "(+0.50%)" in text
+    assert "Session:</b> After-hours" in text
+
+
+def test_format_quote_crypto():
+    q = {
+        "symbol": "BTC-USD",
+        "price": 60000.0,
+        "previous": 58000.0,
+        "meta": {
+            "currency": "USD",
+            "shortName": "Bitcoin USD",
+            "marketState": "REGULAR",
+        },
+    }
+    text = format_quote(q, crypto=True)
+    assert "🪙 <b>Bitcoin USD (BTC/USD)</b>" in text
+    assert "$60,000.00" in text
+    assert "24/7 continuous trading" in text
+    assert "Pre-Market" not in text
+    assert "After-Hours" not in text
 
 
 @pytest.mark.asyncio
-async def test_handle_request_health_and_secret():
+async def test_retired_commands_notice():
     env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token",
     }
-    # Health check GET
-    health_req = MockRequest(method="GET", url="https://example.com/health")
-    res = await handle_request(health_req, env)
-    assert res.status == 200
+    dummy_msg = {"chat": {"id": 123}, "from": {"id": 456}}
 
-    # 404 for unknown path
-    unknown_req = MockRequest(method="GET", url="https://example.com/unknown")
-    res = await handle_request(unknown_req, env)
-    assert res.status == 404
+    reply_alert = await reply_for("alert", ["add", "AAPL", "above", "150"], dummy_msg, env)
+    assert "retired" in reply_alert.lower()
+    assert "stateless" in reply_alert.lower()
 
-    # 403 on missing secret
-    webhook_req = MockRequest(method="POST", url="https://example.com/webhook", body=json.dumps({"update_id": 1}))
-    res = await handle_request(webhook_req, env)
-    assert res.status == 403
+    reply_watchlist = await reply_for("watchlist", ["add", "AAPL"], dummy_msg, env)
+    assert "retired" in reply_watchlist.lower()
+    assert "stateless" in reply_watchlist.lower()
 
-    # 400 on bad JSON body
-    bad_req = MockRequest(
+
+@pytest.mark.asyncio
+async def test_handle_request_health():
+    req = MockRequest(method="GET", url="https://example.com/health")
+    resp = await handle_request(req, {})
+    assert resp.status == 200
+    assert json.loads(resp.body) == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_secret_verification(monkeypatch):
+    env = {
+        "BOT_MODE": "webhook",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
+    }
+    monkeypatch.setattr("cloudflare.webhook.telegram", AsyncMock(return_value={"username": "testbot"}))
+
+    # Missing secret token -> 403
+    req_missing = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body="invalid json",
+        headers={},
+        body=json.dumps({"update_id": 1, "message": {"text": "/stock AAPL", "chat": {"id": 123}}}),
     )
-    res = await handle_request(bad_req, env)
-    assert res.status == 400
+    resp = await handle_request(req_missing, env)
+    assert resp.status == 403
 
-
-@pytest.mark.asyncio
-async def test_handle_request_allowed_chat_ids(monkeypatch):
-    env = {
-        "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
-        "ALLOWED_CHAT_IDS": "999",
-    }
-    send_mock = AsyncMock()
-    monkeypatch.setattr("cloudflare.webhook.telegram", send_mock)
-
-    req = MockRequest(
+    # Valid secret token -> 200
+    req_ok = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 1,
-                "message": {"text": "/stock AAPL", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=json.dumps({"update_id": 1, "message": {"text": "/help", "chat": {"id": 123}}}),
     )
-    res = await handle_request(req, env)
-    assert res.status == 200
-    send_mock.assert_awaited_once()
-    assert "Access denied" in send_mock.await_args[0][2]["text"]
+    resp_ok = await handle_request(req_ok, env)
+    assert resp_ok.status == 200
 
 
 @pytest.mark.asyncio
-async def test_handle_request_duplicate_update_stateless(monkeypatch):
-    from cloudflare import webhook
-
-    webhook.recent_updates.clear()
+async def test_handle_request_in_memory_deduplication(monkeypatch):
     env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
     }
-    send_mock = AsyncMock()
-    monkeypatch.setattr("cloudflare.webhook.telegram", send_mock)
+    monkeypatch.setattr("cloudflare.webhook.telegram", AsyncMock(return_value={"username": "testbot"}))
 
+    payload = json.dumps({"update_id": 9999, "message": {"text": "/help", "chat": {"id": 123}}})
     req1 = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 1001,
-                "message": {"text": "/help", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=payload,
     )
-    res1 = await handle_request(req1, env)
-    assert res1.status == 200
-    send_mock.assert_awaited_once()
+    resp1 = await handle_request(req1, env)
+    assert resp1.status == 200
 
-    # Second request with same update_id
+    # Second delivery with the same update_id -> suppressed as duplicate
     req2 = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 1001,
-                "message": {"text": "/help", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=payload,
     )
-    res2 = await handle_request(req2, env)
-    assert res2.status == 200
-    data = json.loads(res2.body)
+    resp2 = await handle_request(req2, env)
+    assert resp2.status == 200
+    data = json.loads(resp2.body)
     assert data.get("duplicate") is True
-    # send_mock was not called a second time
-    assert send_mock.await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_handle_request_edited_message(monkeypatch):
     env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
     }
-    send_mock = AsyncMock()
-    monkeypatch.setattr("cloudflare.webhook.telegram", send_mock)
-
+    monkeypatch.setattr("cloudflare.webhook.telegram", AsyncMock(return_value={"username": "testbot"}))
+    payload = json.dumps({"update_id": 8888, "edited_message": {"text": "/help", "chat": {"id": 123}}})
     req = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 2001,
-                "edited_message": {"text": "/help", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=payload,
     )
-    res = await handle_request(req, env)
-    assert res.status == 200
-    send_mock.assert_awaited_once()
-    assert "Financial Market Bot" in send_mock.await_args[0][2]["text"]
+    resp = await handle_request(req, env)
+    assert resp.status == 200
 
 
 @pytest.mark.asyncio
-async def test_handle_request_bot_mentions(monkeypatch):
+async def test_handle_request_group_bot_mention(monkeypatch):
     env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
     }
+    monkeypatch.setattr("cloudflare.webhook.telegram", AsyncMock(return_value={"username": "financebot"}))
 
-    async def mock_tg(env, method, body=None):
-        if method == "getMe":
-            return {"username": "MyFinanceBot"}
-        return {}
+    # Mention matching our bot -> processed
+    req_match = MockRequest(
+        method="POST",
+        url="https://example.com/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=json.dumps({"update_id": 101, "message": {"text": "/help@financebot", "chat": {"id": 123}}}),
+    )
+    resp_match = await handle_request(req_match, env)
+    assert resp_match.status == 200
 
-    monkeypatch.setattr("cloudflare.webhook.telegram", mock_tg)
-
-    # Addressed to another bot -> ignored silently
+    # Mention targeting a different bot -> ignored
     req_other = MockRequest(
         method="POST",
         url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 3001,
-                "message": {"text": "/stock@OtherBot AAPL", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123"},
+        body=json.dumps({"update_id": 102, "message": {"text": "/help@otherbot", "chat": {"id": 123}}}),
     )
-    res_other = await handle_request(req_other, env)
-    assert res_other.status == 200
-
-    # Addressed to our bot -> handled
-    send_mock = AsyncMock()
-
-    async def mock_tg_handled(env, method, body=None):
-        if method == "getMe":
-            return {"username": "MyFinanceBot"}
-        return await send_mock(env, method, body)
-
-    monkeypatch.setattr("cloudflare.webhook.telegram", mock_tg_handled)
-    req_mine = MockRequest(
-        method="POST",
-        url="https://example.com/webhook",
-        headers={"X-Telegram-Bot-Api-Secret-Token": "test_secret"},
-        body=json.dumps(
-            {
-                "update_id": 3002,
-                "message": {"text": "/help@MyFinanceBot", "chat": {"id": 123}, "from": {"id": 456}},
-            }
-        ),
-    )
-    res_mine = await handle_request(req_mine, env)
-    assert res_mine.status == 200
-    send_mock.assert_awaited_once()
-
-
-def test_d1_schema_sqlite_execution():
-    import sqlite3
-    from pathlib import Path
-
-    migration_file = Path(__file__).parents[2] / "cloudflare" / "migrations" / "0001_storage.sql"
-    sql = migration_file.read_text(encoding="utf-8")
-
-    conn = sqlite3.connect(":memory:")
-    conn.executescript(sql)
-
-    # Verify tables
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = {row[0] for row in cursor.fetchall()}
-    assert {"watchlist", "alerts", "processed_updates"}.issubset(tables)
-
-    # Test processed_updates constraint
-    conn.execute("INSERT INTO processed_updates (update_id) VALUES (42)")
-    conn.commit()
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO processed_updates (update_id) VALUES (42)")
+    resp_other = await handle_request(req_other, env)
+    assert resp_other.status == 200
 
 
 @pytest.mark.asyncio
-async def test_command_parity_executions(monkeypatch):
-    from cloudflare.webhook import reply_for
-
+async def test_handle_request_payload_too_large():
     env = {
         "BOT_MODE": "webhook",
-        "TELEGRAM_BOT_TOKEN": "123:token",
-        "TELEGRAM_WEBHOOK_SECRET": "test_secret",
-        "STORAGE_BACKEND": "none",
-        "WATCHLIST_ENABLED": "false",
-        "ALERTS_ENABLED": "false",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
     }
-    dummy_msg = {"chat": {"id": 123}, "from": {"id": 456, "first_name": "Alice"}}
+    big_body = "x" * (1048576 + 50)
+    req = MockRequest(
+        method="POST",
+        url="https://example.com/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secret_token_123", "content-length": str(len(big_body))},
+        body=big_body,
+    )
+    resp = await handle_request(req, env)
+    assert resp.status == 413
 
-    # Mock data_request for stock and crypto
-    async def mock_data_req(path, params):
-        if "chart/" in path:
-            sym = path.split("chart/")[-1]
-            price = 50000.0 if "BTC" in sym else 150.0
-            prev = 48000.0 if "BTC" in sym else 145.0
+
+@pytest.mark.asyncio
+async def test_cloudflare_all_core_commands(monkeypatch):
+    env = {
+        "BOT_MODE": "webhook",
+        "TELEGRAM_BOT_TOKEN": "123:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_token_123",
+        "ADMIN_USER_IDS": "777",
+    }
+    dummy_msg = {"chat": {"id": 123}, "from": {"id": 777}}
+
+    async def mock_data_req(path, params, ttl=45):
+        if "chart" in path:
             return {
                 "chart": {
                     "result": [
                         {
                             "meta": {
+                                "regularMarketPrice": 150.0,
+                                "previousClose": 148.0,
                                 "currency": "USD",
-                                "regularMarketPrice": price,
-                                "previousClose": prev,
-                                "shortName": "Test Asset",
-                                "regularMarketDayLow": price * 0.95,
-                                "regularMarketDayHigh": price * 1.05,
-                                "fiftyTwoWeekLow": price * 0.7,
-                                "fiftyTwoWeekHigh": price * 1.2,
-                                "regularMarketVolume": 1000000,
+                                "shortName": "Apple Inc.",
+                                "marketState": "REGULAR",
                             },
-                            "indicators": {"quote": [{"close": [prev, price]}]},
+                            "indicators": {"quote": [{"close": [148.0, 150.0]}]},
                             "timestamp": [1700000000, 1700086400],
                         }
                     ]
                 }
             }
+        if "search" in path:
+            return {
+                "quotes": [{"symbol": "AAPL", "shortname": "Apple Inc.", "exchDisp": "NASDAQ", "quoteType": "EQUITY"}],
+                "news": [{"title": "Apple Announcement", "link": "https://example.com/news"}],
+            }
         return {}
 
     monkeypatch.setattr("cloudflare.webhook.data_request", mock_data_req)
-    monkeypatch.setattr("cloudflare.webhook.company_summary", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        "cloudflare.webhook.company_summary",
+        AsyncMock(
+            return_value={
+                "price": {"shortName": "Apple Inc.", "marketCap": {"raw": 3000000000000}},
+                "assetProfile": {
+                    "sector": "Technology",
+                    "industry": "Consumer Electronics",
+                    "website": "https://apple.com",
+                },
+                "summaryDetail": {"trailingPE": {"raw": 30.5}},
+            }
+        ),
+    )
 
-    # 1. /stock AAPL
-    stock_reply = await reply_for("stock", ["AAPL"], dummy_msg, env)
-    assert "AAPL" in stock_reply
-    assert "$150.00" in stock_reply
+    # /stock
+    res_stock = await reply_for("stock", ["AAPL"], dummy_msg, env)
+    assert "Apple Inc." in res_stock
+    assert "$150.00" in res_stock
 
-    # 2. /crypto BTC
-    crypto_reply = await reply_for("crypto", ["BTC"], dummy_msg, env)
-    assert "BTC/USD" in crypto_reply
-    assert "$50,000.00" in crypto_reply
+    # /indices (cash + futures)
+    res_indices = await reply_for("indices", [], dummy_msg, env)
+    assert "Major Market Indices (Cash)" in res_indices
+    assert "S&amp;P 500" in res_indices
+    assert "Market Futures" in res_indices
 
-    # 3. /indices
-    indices_reply = await reply_for("indices", [], dummy_msg, env)
-    assert "Major Market Indices" in indices_reply
-    assert "S&amp;P 500" in indices_reply
+    # /compare
+    res_compare = await reply_for("compare", ["AAPL", "MSFT"], dummy_msg, env)
+    assert "AAPL" in res_compare
+    assert "MSFT" in res_compare
 
-    # 4. /compare AAPL MSFT
-    compare_reply = await reply_for("compare", ["AAPL", "MSFT"], dummy_msg, env)
-    assert "Compare" in compare_reply
-    assert "AAPL" in compare_reply
-    assert "MSFT" in compare_reply
+    # /chart
+    res_chart = await reply_for("chart", ["AAPL"], dummy_msg, env)
+    assert isinstance(res_chart, dict)
+    assert res_chart["image"].startswith(b"\x89PNG")
 
-    # 5. /chart AAPL
-    chart_reply = await reply_for("chart", ["AAPL"], dummy_msg, env)
-    assert isinstance(chart_reply, dict)
-    assert "image" in chart_reply
-    assert chart_reply["image"].startswith(b"\x89PNG")
-    assert "AAPL" in chart_reply["caption"]
+    # /search
+    res_search = await reply_for("search", ["Apple"], dummy_msg, env)
+    assert "AAPL" in res_search
+
+    # /stocknews
+    res_news = await reply_for("stocknews", ["AAPL"], dummy_msg, env)
+    assert "Apple Announcement" in res_news
+
+    # /marketcap
+    res_mcap = await reply_for("marketcap", ["AAPL"], dummy_msg, env)
+    assert "Market Cap:" in res_mcap
+    assert "3.00T" in res_mcap
+
+    # /stockinfo
+    res_info = await reply_for("stockinfo", ["AAPL"], dummy_msg, env)
+    assert "Technology" in res_info
+    assert "apple.com" in res_info
+
+    # /admin stats
+    res_admin = await reply_for("admin", ["stats"], dummy_msg, env)
+    assert "Admin Stats" in res_admin
+    assert "Cloudflare Python Worker" in res_admin

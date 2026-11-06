@@ -1,32 +1,10 @@
-import sqlite3
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
-from bot import storage
+from bot.chart import render_chart
 from bot.metrics import record_command, record_error, reset, snapshot
-
-
-@pytest.fixture(autouse=True)
-def _reset_metrics():
-    reset()
-    yield
-    reset()
-
-
-@pytest.fixture
-def tmp_storage(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmp:
-        monkeypatch.setattr("bot.config.DATA_DIR", tmp)
-        storage._db_path = None
-        storage.init_storage()
-        yield tmp
-        storage._db_path = None
+from bot.symbols import is_crypto_symbol, to_yfinance_crypto, to_yfinance_stock
 
 
 def test_metrics_snapshot():
+    reset()
     record_command("stock")
     record_command("stock")
     record_error()
@@ -35,139 +13,17 @@ def test_metrics_snapshot():
     assert snap["errors_total"] == 1
 
 
-def test_watchlist_add_list_remove(tmp_storage):
-    ok, msg = storage.watchlist_add(1, "AAPL")
-    assert ok
-    assert storage.watchlist_list(1) == ["AAPL"]
-    ok, msg = storage.watchlist_add(1, "AAPL")
-    assert not ok
-    ok, msg = storage.watchlist_remove(1, "AAPL")
-    assert ok
-    assert storage.watchlist_list(1) == []
+def test_symbols_conversion():
+    assert to_yfinance_stock("AAPL") == "AAPL"
+    assert to_yfinance_crypto("BTC") == "BTC-USD"
+    assert to_yfinance_crypto("BTC/USD") == "BTC-USD"
+    assert is_crypto_symbol("BTC-USD") is True
+    assert is_crypto_symbol("AAPL") is False
 
 
-def test_watchlist_max(tmp_storage):
-    for i in range(storage.MAX_WATCHLIST):
-        ok, _ = storage.watchlist_add(42, f"T{i}")
-        assert ok
-    ok, msg = storage.watchlist_add(42, "EXTRA")
-    assert not ok
-    assert "full" in msg.lower()
-
-
-def test_watchlist_shared_across_chats_same_user(tmp_storage):
-    """Same user_id sees one list regardless of which chat invoked the command."""
-    user_id = 999001
-    assert storage.watchlist_add(user_id, "AAPL")[0]
-    assert storage.watchlist_add(user_id, "MSFT")[0]
-    assert storage.watchlist_list(user_id) == ["AAPL", "MSFT"]
-    # Different user has a separate list
-    assert storage.watchlist_list(999002) == []
-    assert storage.watchlist_add(999002, "GOOG")[0]
-    assert storage.watchlist_list(user_id) == ["AAPL", "MSFT"]
-    assert storage.watchlist_list(999002) == ["GOOG"]
-
-
-def test_watchlist_migrates_private_chat_rows(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmp:
-        monkeypatch.setattr("bot.config.DATA_DIR", tmp)
-        storage._db_path = None
-        db_path = Path(tmp) / "bot.db"
-        conn = sqlite3.connect(db_path)
-        conn.executescript(
-            """
-            CREATE TABLE watchlist (
-                chat_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
-                PRIMARY KEY (chat_id, symbol)
-            );
-            INSERT INTO watchlist (chat_id, symbol) VALUES (555, 'AAPL');
-            INSERT INTO watchlist (chat_id, symbol) VALUES (-1001, 'TSLA');
-            """
-        )
-        conn.commit()
-        conn.close()
-
-        storage._db_path = None
-        storage.init_storage()
-        assert storage.watchlist_list(555) == ["AAPL"]
-        # Group/channel row dropped
-        cols = set()
-        with storage._lock:
-            c = storage._connect()
-            try:
-                cols = {r["name"] for r in c.execute("PRAGMA table_info(watchlist)").fetchall()}
-                leftover = c.execute("SELECT COUNT(*) AS c FROM watchlist WHERE symbol = 'TSLA'").fetchone()["c"]
-            finally:
-                c.close()
-        assert "user_id" in cols
-        assert "chat_id" not in cols
-        assert leftover == 0
-        storage._db_path = None
-
-
-def test_alert_crud(tmp_storage):
-    ok, msg, alert_id = storage.alert_add(1, 9, "MSFT", "above", 400.0)
-    assert ok and alert_id
-    rows = storage.alert_list(1)
-    assert len(rows) == 1
-    assert rows[0]["symbol"] == "MSFT"
-    ok, msg = storage.alert_remove(1, alert_id)
-    assert ok
-    assert storage.alert_list(1) == []
-
-
-@pytest.mark.asyncio
-async def test_compare_command(monkeypatch):
-    import bot.utils as utils_mod
-    from bot.commands.compare import compare
-    from bot.utils import USER_COOLDOWNS
-
-    monkeypatch.setattr(utils_mod, "ALLOWED_CHAT_IDS", set())
-
-    update = MagicMock()
-    update.effective_chat.id = 1
-    update.effective_user.id = 2
-    update.effective_user.first_name = "Test"
-    update.message.text = "/compare AAPL MSFT"
-    update.message.reply_text = AsyncMock()
-    update.effective_message = update.message
-    context = MagicMock()
-    context.args = ["AAPL", "MSFT"]
-    context.bot.send_chat_action = AsyncMock()
-
-    with patch("bot.commands.compare._get_yfinance_info", new_callable=AsyncMock) as mock_info:
-        mock_info.side_effect = [
-            {"regularMarketPrice": 100, "previousClose": 90, "shortName": "A"},
-            {"regularMarketPrice": 200, "previousClose": 210, "shortName": "M"},
-        ]
-        USER_COOLDOWNS.clear()
-        await compare(update, context)
-
-    args, kwargs = update.message.reply_text.call_args
-    assert "Compare" in args[0]
-    assert "AAPL" in args[0]
-    assert "MSFT" in args[0]
-    assert kwargs.get("parse_mode") == "HTML"
-
-
-@pytest.mark.asyncio
-@patch("bot.services.asyncio.to_thread", new_callable=AsyncMock)
-async def test_premarket_line_in_quote(mock_to_thread):
-    from bot import services as main
-
-    main.QUOTE_CACHE.clear()
-    mock_to_thread.return_value = {
-        "shortName": "Apple Inc.",
-        "regularMarketPrice": 150.50,
-        "previousClose": 149.0,
-        "marketState": "PRE",
-        "preMarketPrice": 151.0,
-        "preMarketChange": 0.5,
-        "preMarketChangePercent": 0.33,
-        "regularMarketTime": 1672531200,
-    }
-    result = await main.get_quote_formatted("AAPL")
-    assert "Pre:" in result
-    assert "$151.00" in result
+def test_stateless_chart_rendering():
+    prices = [150.0, 152.5, 151.0, 154.0, 153.5]
+    png = render_chart(prices, symbol="AAPL", period="1MO", timestamps=[1700000000 + i * 86400 for i in range(5)])
+    assert isinstance(png, bytes)
+    assert png.startswith(b"\x89PNG")
+    assert len(png) > 1000

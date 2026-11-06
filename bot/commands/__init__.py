@@ -1,8 +1,8 @@
 from .admin import admin
-from .alerts import alert
 from .basics import (
     _ignore_non_command_group_messages,
     get_help_text,
+    retired_command,
     setup_commands,
     start,
 )
@@ -12,7 +12,6 @@ from .crypto import crypto
 from .indices import indices
 from .search import search
 from .stocks import marketcap, stock, stockinfo, stocknews
-from .watchlist import watchlist
 
 __all__ = [
     "start",
@@ -27,8 +26,7 @@ __all__ = [
     "indices",
     "search",
     "compare",
-    "watchlist",
     "chart",
-    "alert",
     "admin",
+    "retired_command",
 ]

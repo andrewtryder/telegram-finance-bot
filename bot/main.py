@@ -11,24 +11,21 @@ from telegram.ext import (
 from bot.commands import (
     _ignore_non_command_group_messages,
     admin,
-    alert,
     chart,
     compare,
     crypto,
     indices,
     marketcap,
+    retired_command,
     search,
     setup_commands,
     start,
     stock,
     stockinfo,
     stocknews,
-    watchlist,
 )
 from bot.config import (
-    ALERTS_ENABLED,
     BOT_MODE,
-    STORAGE_BACKEND,
     TELEGRAM_BOT_TOKEN,
     init_honeybadger,
     is_network_timeout,
@@ -36,9 +33,7 @@ from bot.config import (
     notify_honeybadger,
     validate_config,
 )
-from bot.jobs import check_price_alerts_job, log_metrics_job
 from bot.metrics import record_error, snapshot
-from bot.storage import init_storage
 
 # Optional: Only ignore text/commands in groups if you didn't enable Privacy Mode
 GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Regex(r"^/")
@@ -87,17 +82,6 @@ async def post_init(application) -> None:
     if webhook.url:
         raise RuntimeError("Telegram webhook is active; remove it before starting polling")
     await setup_commands(application)
-    if STORAGE_BACKEND == "sqlite":
-        init_storage()
-
-    if application.job_queue:
-        if ALERTS_ENABLED:
-            application.job_queue.run_repeating(check_price_alerts_job, interval=60, first=15)
-            logger.info("Scheduled alert poller (60s).")
-        application.job_queue.run_repeating(log_metrics_job, interval=900, first=60)
-        logger.info("Scheduled metrics logger (15m).")
-    else:
-        logger.warning("JobQueue unavailable; alerts and periodic metrics logging are disabled.")
 
 
 async def post_shutdown(application) -> None:
@@ -106,7 +90,7 @@ async def post_shutdown(application) -> None:
 
 
 def register_handlers(application):
-    """Register the same command and error handlers for any transport."""
+    """Register the command and error handlers for any transport."""
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     application.add_handler(CommandHandler("stock", stock))
@@ -116,13 +100,12 @@ def register_handlers(application):
     application.add_handler(CommandHandler("stocknews", stocknews))
     application.add_handler(CommandHandler("marketcap", marketcap))
     application.add_handler(CommandHandler("compare", compare))
-    application.add_handler(CommandHandler("watchlist", watchlist))
     application.add_handler(CommandHandler("chart", chart))
-    application.add_handler(CommandHandler("alert", alert))
     application.add_handler(CommandHandler("admin", admin))
-
-    # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))
+
+    # Gracefully inform users when retired stateful commands are sent
+    application.add_handler(CommandHandler(("alert", "watchlist"), retired_command))
 
     # Error handler
     application.add_error_handler(error_handler)
@@ -135,7 +118,7 @@ def register_handlers(application):
 
 
 def main():
-    """Start the bot."""
+    """Start the bot in polling mode."""
     validate_config()
     if BOT_MODE != "polling":
         raise RuntimeError("bot.main only supports polling mode")

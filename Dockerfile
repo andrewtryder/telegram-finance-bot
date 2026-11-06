@@ -20,24 +20,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Fonts for matplotlib charts
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy the virtual environment built against the same Python base image.
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source
 COPY bot/ ./bot/
 
-# Persistent data directory for SQLite (mount a Railway volume here)
-RUN mkdir -p /app/data && adduser --disabled-password --gecos "" botuser \
+RUN adduser --disabled-password --gecos "" botuser \
     && chown -R botuser:botuser /app
 USER botuser
 
-ENV DATA_DIR=/app/data
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Default entrypoint
-CMD ["sh", "-c", "case \"${BOT_MODE:-polling}\" in polling) exec python -m bot.main ;; webhook) exec python -m bot.webhook ;; *) echo 'Invalid BOT_MODE' >&2; exit 1 ;; esac"]
+CMD ["sh", "-c", "case \"${BOT_MODE:-webhook}\" in polling) exec python -m bot.main ;; webhook) exec python -m bot.webhook ;; *) echo 'Invalid BOT_MODE' >&2; exit 1 ;; esac"]

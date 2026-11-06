@@ -56,28 +56,25 @@ MAX_SEARCH_LEN = 64
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name, str(default)).strip().lower()
-    if value not in ("true", "false"):
-        raise ValueError(f"{name} must be true or false")
-    return value == "true"
+BOT_MODE = os.getenv("BOT_MODE", "webhook").strip().lower()
 
-
-BOT_MODE = os.getenv("BOT_MODE", "polling").strip().lower()
-STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "sqlite").strip().lower()
-WATCHLIST_ENABLED = _env_bool("WATCHLIST_ENABLED", True)
-ALERTS_ENABLED = _env_bool("ALERTS_ENABLED", True)
+# Legacy feature warnings
+if os.getenv("STORAGE_BACKEND"):
+    backend_val = os.getenv("STORAGE_BACKEND", "").strip().lower()
+    if backend_val not in ("none", ""):
+        logger.warning(
+            "STORAGE_BACKEND=%s is deprecated. The bot is now fully stateless and does not use a database.",
+            backend_val,
+        )
+if os.getenv("WATCHLIST_ENABLED"):
+    logger.warning("WATCHLIST_ENABLED is deprecated. Watchlists have been retired; the bot is now fully stateless.")
+if os.getenv("ALERTS_ENABLED"):
+    logger.warning("ALERTS_ENABLED is deprecated. Price alerts have been retired; the bot is now fully stateless.")
 
 
 def validate_config() -> None:
     if BOT_MODE not in ("polling", "webhook"):
         raise ValueError("BOT_MODE must be polling or webhook")
-    if STORAGE_BACKEND not in ("none", "sqlite", "d1"):
-        raise ValueError("STORAGE_BACKEND must be none, sqlite, or d1")
-    if STORAGE_BACKEND == "none" and (WATCHLIST_ENABLED or ALERTS_ENABLED):
-        raise ValueError("Enabled watchlists or alerts require persistent storage")
-    if STORAGE_BACKEND == "d1":
-        raise ValueError("D1 storage is only supported on Cloudflare Workers")
 
 
 # Parse ALLOWED_CHAT_IDS
@@ -105,6 +102,7 @@ if ADMIN_USER_IDS_ENV:
                 logger.warning(f"Invalid user ID in ADMIN_USER_IDS: {uid}")
 
 INDEX_MAPPING = {"^GSPC": "S&P 500", "^DJI": "Dow Jones", "^IXIC": "Nasdaq"}
+FUTURES_MAPPING = {"ES=F": "S&P 500 Futures", "NQ=F": "Nasdaq 100 Futures", "YM=F": "Dow Futures"}
 
 
 def init_honeybadger() -> bool:

@@ -1,4 +1,4 @@
-"""Command-level tests for watchlist, chart, alert, and compare."""
+"""Command-level tests for chart, compare, and retired commands (watchlist & alert)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,19 +7,18 @@ from telegram import Chat, Message, Update, User
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 
-from bot import config, storage
+from bot import config
+from bot.commands.basics import retired_command
+from bot.commands.chart import chart
+from bot.commands.compare import compare
 from bot.utils import USER_COOLDOWNS
 
 
 @pytest.fixture(autouse=True)
-def reset_states(tmp_path, monkeypatch):
+def reset_states():
     config.ALLOWED_CHAT_IDS.clear()
     USER_COOLDOWNS.clear()
-    monkeypatch.setattr("bot.config.DATA_DIR", str(tmp_path))
-    storage._db_path = None
-    storage.init_storage()
     yield
-    storage._db_path = None
 
 
 @pytest.fixture
@@ -50,222 +49,56 @@ def mock_context():
     return context
 
 
-# --- watchlist ---
+# --- retired commands ---
 
 
 @pytest.mark.asyncio
-async def test_watchlist_empty(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    mock_context.args = []
-    await watchlist(mock_update, mock_context)
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "empty" in text.lower()
-
-
-@pytest.mark.asyncio
-async def test_watchlist_add_and_show(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    mock_context.args = ["add", "AAPL"]
-    await watchlist(mock_update, mock_context)
-    assert "Added AAPL" in mock_update.message.reply_text.call_args[0][0]
-
-    USER_COOLDOWNS.clear()
-    mock_update.message.reply_text.reset_mock()
-    mock_context.args = []
-    with patch("bot.commands.watchlist._get_yfinance_info", new_callable=AsyncMock) as mock_info:
-        mock_info.return_value = {"regularMarketPrice": 100, "previousClose": 90}
-        await watchlist(mock_update, mock_context)
-
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "Watchlist" in text
-    assert "AAPL" in text
-
-
-@pytest.mark.asyncio
-async def test_watchlist_remove(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    storage.watchlist_add(11111, "MSFT")
-    mock_context.args = ["remove", "MSFT"]
-    await watchlist(mock_update, mock_context)
-    assert "Removed MSFT" in mock_update.message.reply_text.call_args[0][0]
-    assert storage.watchlist_list(11111) == []
-
-
-@pytest.mark.asyncio
-async def test_watchlist_anonymous_user(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    mock_update.effective_user = None
-    mock_context.args = []
-    await watchlist(mock_update, mock_context)
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "identity" in text.lower() or "anonymous" in text.lower()
-
-
-@pytest.mark.asyncio
-async def test_watchlist_persists_for_same_user_different_chat(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    mock_context.args = ["add", "NVDA"]
-    await watchlist(mock_update, mock_context)
-
-    USER_COOLDOWNS.clear()
-    # Same user, different chat (e.g. channel)
-    mock_update.effective_chat.id = -100999
-    mock_context.args = []
-    with patch("bot.commands.watchlist._get_yfinance_info", new_callable=AsyncMock) as mock_info:
-        mock_info.return_value = {"regularMarketPrice": 500, "previousClose": 490}
-        await watchlist(mock_update, mock_context)
-
-    assert "NVDA" in mock_update.message.reply_text.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_watchlist_add_crypto_shorthand(mock_update, mock_context):
-    from bot.commands.watchlist import watchlist
-
-    mock_context.args = ["add", "BTC"]
-    await watchlist(mock_update, mock_context)
-    assert "Added BTC-USD" in mock_update.message.reply_text.call_args[0][0]
-    assert storage.watchlist_list(11111) == ["BTC-USD"]
-
-    USER_COOLDOWNS.clear()
-    mock_update.message.reply_text.reset_mock()
-    mock_context.args = []
-    with patch("bot.commands.watchlist._get_yfinance_info", new_callable=AsyncMock) as mock_info:
-        mock_info.return_value = {"regularMarketPrice": 0.42, "previousClose": 0.40}
-        await watchlist(mock_update, mock_context)
-
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "BTC/USD" in text
-    assert "$0.4200" in text
-    mock_info.assert_awaited_once_with("BTC-USD")
+async def test_retired_command_reply(mock_update, mock_context):
+    await retired_command(mock_update, mock_context)
+    mock_update.message.reply_text.assert_awaited_once()
+    reply = mock_update.message.reply_text.await_args[0][0]
+    assert "retired" in reply.lower()
+    assert "stateless" in reply.lower()
 
 
 # --- chart ---
 
 
 @pytest.mark.asyncio
-async def test_chart_without_args(mock_update, mock_context):
-    from bot.commands.chart import chart
-
+async def test_chart_no_args(mock_update, mock_context):
+    mock_context.args = []
     await chart(mock_update, mock_context)
-    assert "Usage" in mock_update.message.reply_text.call_args[0][0]
+    mock_update.message.reply_text.assert_awaited_once()
+    assert "Usage: <code>/chart" in mock_update.message.reply_text.await_args[0][0]
 
 
 @pytest.mark.asyncio
-async def test_chart_invalid_period(mock_update, mock_context):
-    from bot.commands.chart import chart
-
-    mock_context.args = ["AAPL", "2w"]
+async def test_chart_bad_period(mock_update, mock_context):
+    mock_context.args = ["AAPL", "5y"]
     await chart(mock_update, mock_context)
-    assert "Period must be" in mock_update.message.reply_text.call_args[0][0]
+    assert "Period must be one of" in mock_update.message.reply_text.await_args[0][0]
 
 
 @pytest.mark.asyncio
-@patch("bot.commands.chart.get_history_chart_png", new_callable=AsyncMock)
-async def test_chart_success(mock_png, mock_update, mock_context):
-    from bot.commands.chart import chart
+async def test_chart_success(mock_update, mock_context):
+    mock_context.args = ["AAPL"]
+    with patch("bot.commands.chart.get_history_chart_png", new_callable=AsyncMock) as mock_get_chart:
+        mock_get_chart.return_value = b"\x89PNGfake"
+        await chart(mock_update, mock_context)
 
-    mock_png.return_value = b"\x89PNG\r\n\x1a\nfake"
-    mock_context.args = ["AAPL", "3mo"]
-    await chart(mock_update, mock_context)
-    mock_png.assert_awaited_once_with("AAPL", period="3mo")
     mock_update.message.reply_photo.assert_awaited_once()
-    assert "AAPL" in mock_update.message.reply_photo.call_args.kwargs["caption"]
+    assert mock_update.message.reply_photo.await_args.kwargs["caption"] == "📈 AAPL · 1mo"
 
 
 @pytest.mark.asyncio
-@patch("bot.commands.chart.get_history_chart_png", new_callable=AsyncMock)
-async def test_chart_crypto_shorthand(mock_png, mock_update, mock_context):
-    from bot.commands.chart import chart
+async def test_chart_render_failure(mock_update, mock_context):
+    mock_context.args = ["AAPL"]
+    with patch("bot.commands.chart.get_history_chart_png", new_callable=AsyncMock) as mock_get_chart:
+        mock_get_chart.return_value = None
+        await chart(mock_update, mock_context)
 
-    mock_png.return_value = b"\x89PNG\r\n\x1a\nfake"
-    mock_context.args = ["BTC", "1mo"]
-    await chart(mock_update, mock_context)
-    mock_png.assert_awaited_once_with("BTC-USD", period="1mo")
-    assert "BTC/USD" in mock_update.message.reply_photo.call_args.kwargs["caption"]
-
-
-@pytest.mark.asyncio
-@patch("bot.commands.chart.get_history_chart_png", new_callable=AsyncMock)
-async def test_chart_no_data(mock_png, mock_update, mock_context):
-    from bot.commands.chart import chart
-
-    mock_png.return_value = None
-    mock_context.args = ["ZZZZ"]
-    await chart(mock_update, mock_context)
-    assert "Could not build a chart" in mock_update.message.reply_text.call_args[0][0]
-
-
-# --- alert ---
-
-
-@pytest.mark.asyncio
-async def test_alert_list_empty(mock_update, mock_context):
-    from bot.commands.alerts import alert
-
-    mock_context.args = ["list"]
-    await alert(mock_update, mock_context)
-    assert "No alerts" in mock_update.message.reply_text.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_alert_add_list_remove(mock_update, mock_context):
-    from bot.commands.alerts import alert
-
-    mock_context.args = ["add", "AAPL", "above", "200"]
-    await alert(mock_update, mock_context)
-    assert "Alert #" in mock_update.message.reply_text.call_args[0][0]
-
-    USER_COOLDOWNS.clear()
-    mock_update.message.reply_text.reset_mock()
-    mock_context.args = ["list"]
-    await alert(mock_update, mock_context)
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "AAPL" in text
-    assert "above" in text
-
-    rows = storage.alert_list(12345)
-    alert_id = rows[0]["id"]
-    USER_COOLDOWNS.clear()
-    mock_update.message.reply_text.reset_mock()
-    mock_context.args = ["remove", str(alert_id)]
-    await alert(mock_update, mock_context)
-    assert "Removed" in mock_update.message.reply_text.call_args[0][0]
-    assert storage.alert_list(12345) == []
-
-
-@pytest.mark.asyncio
-async def test_alert_add_crypto_shorthand(mock_update, mock_context):
-    from bot.commands.alerts import alert
-
-    mock_context.args = ["add", "BTC", "above", "100000"]
-    await alert(mock_update, mock_context)
-    assert "BTC-USD" in mock_update.message.reply_text.call_args[0][0]
-    rows = storage.alert_list(12345)
-    assert rows[0]["symbol"] == "BTC-USD"
-
-
-@pytest.mark.asyncio
-async def test_alert_add_bad_direction(mock_update, mock_context):
-    from bot.commands.alerts import alert
-
-    mock_context.args = ["add", "AAPL", "around", "200"]
-    await alert(mock_update, mock_context)
-    assert "above" in mock_update.message.reply_text.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_alert_add_bad_price(mock_update, mock_context):
-    from bot.commands.alerts import alert
-
-    mock_context.args = ["add", "AAPL", "above", "nope"]
-    await alert(mock_update, mock_context)
-    assert "number" in mock_update.message.reply_text.call_args[0][0].lower()
+    mock_update.message.reply_text.assert_awaited_once()
+    assert "Could not build a chart" in mock_update.message.reply_text.await_args[0][0]
 
 
 # --- compare ---
@@ -273,37 +106,28 @@ async def test_alert_add_bad_price(mock_update, mock_context):
 
 @pytest.mark.asyncio
 async def test_compare_too_few_args(mock_update, mock_context):
-    from bot.commands.compare import compare
-
     mock_context.args = ["AAPL"]
     await compare(mock_update, mock_context)
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "2–4" in text or "2-4" in text
+    assert "Provide 2–4 tickers" in mock_update.message.reply_text.await_args[0][0]
 
 
 @pytest.mark.asyncio
-async def test_compare_invalid_ticker(mock_update, mock_context):
-    from bot.commands.compare import compare
-
-    mock_context.args = ["AAPL", "BAD$"]
+async def test_compare_too_many_args(mock_update, mock_context):
+    mock_context.args = ["A", "B", "C", "D", "E"]
     await compare(mock_update, mock_context)
-    assert "Invalid ticker" in mock_update.message.reply_text.call_args[0][0]
+    assert "Provide 2–4 tickers" in mock_update.message.reply_text.await_args[0][0]
 
 
 @pytest.mark.asyncio
-async def test_compare_crypto_shorthand(mock_update, mock_context):
-    from bot.commands.compare import compare
-
-    mock_context.args = ["BTC", "ETH"]
+async def test_compare_success(mock_update, mock_context):
+    mock_context.args = ["AAPL", "MSFT"]
+    sample = {"regularMarketPrice": 150.0, "previousClose": 140.0}
     with patch("bot.commands.compare._get_yfinance_info", new_callable=AsyncMock) as mock_info:
-        mock_info.side_effect = [
-            {"regularMarketPrice": 100000, "previousClose": 99000},
-            {"regularMarketPrice": 3500, "previousClose": 3400},
-        ]
+        mock_info.return_value = sample
         await compare(mock_update, mock_context)
 
-    assert mock_info.await_args_list[0].args[0] == "BTC-USD"
-    assert mock_info.await_args_list[1].args[0] == "ETH-USD"
-    text = mock_update.message.reply_text.call_args[0][0]
-    assert "BTC/USD" in text
-    assert "ETH/USD" in text
+    mock_update.message.reply_text.assert_awaited_once()
+    text = mock_update.message.reply_text.await_args[0][0]
+    assert "AAPL" in text
+    assert "MSFT" in text
+    assert "$150.00" in text

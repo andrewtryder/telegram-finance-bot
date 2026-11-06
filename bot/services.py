@@ -1,10 +1,19 @@
 import asyncio
 import html
+import math
+import zoneinfo
+from datetime import datetime, timezone
 
 import yfinance as yf
 from cachetools import TTLCache
 
+from .chart import render_chart
 from .config import logger
+
+try:
+    EASTERN_TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    EASTERN_TZ = timezone.utc
 
 # Quote cache (yfinance symbol -> info dict)
 QUOTE_CACHE = TTLCache(maxsize=100, ttl=60)
@@ -12,12 +21,22 @@ QUOTE_CACHE = TTLCache(maxsize=100, ttl=60)
 SEARCH_CACHE = TTLCache(maxsize=200, ttl=300)
 
 
-async def search_symbols(query: str, max_results: int = 5) -> list[dict]:
-    """Search Yahoo Finance for symbols matching a free-text query.
+def format_et_time(epoch_seconds: int | float | None) -> str:
+    """Format Unix epoch timestamp into US Eastern Time (e.g. 8:42 AM ET)."""
+    if not epoch_seconds:
+        return ""
+    try:
+        dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(EASTERN_TZ)
+        hour = dt.hour % 12 or 12
+        minute = f"{dt.minute:02d}"
+        ampm = "AM" if dt.hour < 12 else "PM"
+        return f"{hour}:{minute} {ampm} ET"
+    except Exception:
+        return ""
 
-    Returns Yahoo-native symbols, so results can be passed straight into
-    /stock, /crypto, /chart, /compare, or /watchlist without translation.
-    """
+
+async def search_symbols(query: str, max_results: int = 5) -> list[dict]:
+    """Search Yahoo Finance for symbols matching a free-text query."""
     from .utils import execute_provider_call
 
     cache_key = (query.lower().strip(), max_results)
@@ -48,45 +67,27 @@ async def search_symbols(query: str, max_results: int = 5) -> list[dict]:
 
 
 def _fetch_yfinance_info(yfinance_symbol: str) -> dict:
-    """Fetches a rich payload combining fast_info, info, and history for quotes."""
+    """Fetches a targeted payload combining info and fast_info."""
     try:
         t = yf.Ticker(yfinance_symbol)
-
         result = {}
 
-        # 1. Base info (still needed for name, sector, etc.)
+        # 1. Base info
         try:
-            result.update(t.info)
+            info_data = t.info
+            if isinstance(info_data, dict):
+                result.update(info_data)
         except Exception as e:
             logger.warning(f"Could not fetch info for {yfinance_symbol}: {e}")
 
-        # 2. Fast Info (Overrides overlapping info fields)
+        # 2. Fast Info (Overrides overlapping fast fields)
         try:
             for k in t.fast_info.keys():
                 val = t.fast_info[k]
-                if val is not None and not str(val).lower() == "nan":
+                if val is not None and str(val).lower() != "nan":
                     result[k] = val
         except Exception as e:
             logger.warning(f"Could not fetch fast_info for {yfinance_symbol}: {e}")
-
-        # 3. 5-day history for week range
-        try:
-            hist_5d = t.history(period="5d", interval="1d")
-            if not hist_5d.empty:
-                result["weekHigh"] = float(hist_5d["High"].max())
-                result["weekLow"] = float(hist_5d["Low"].min())
-        except Exception as e:
-            logger.warning(f"Could not fetch 5d history for {yfinance_symbol}: {e}")
-
-        # 4. Fallback for 52W range if fast_info missed it
-        if "yearHigh" not in result or "yearLow" not in result:
-            try:
-                hist_1y = t.history(period="1y", interval="1d")
-                if not hist_1y.empty:
-                    result["yearHigh"] = float(hist_1y["High"].max())
-                    result["yearLow"] = float(hist_1y["Low"].min())
-            except Exception as e:
-                logger.warning(f"Could not fetch 1y history for {yfinance_symbol}: {e}")
 
         return result
     except Exception as e:
@@ -132,8 +133,11 @@ async def _get_yfinance_news(symbol: str) -> list:
 def _format_price(price, is_crypto: bool) -> str:
     if price is None:
         return "N/A"
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return "N/A"
 
-    # Format crypto with more precision if it's cheap
     if is_crypto and price < 1.0:
         return f"${price:,.4f}"
     return f"${price:,.2f}"
@@ -150,54 +154,8 @@ def _format_volume(vol) -> str:
         return "N/A"
 
 
-def _format_extended_hours(info: dict) -> str | None:
-    """Compact pre/post-market line when Yahoo exposes extended-session prices."""
-    from .utils import _trend_arrow
-
-    state = str(info.get("marketState") or "").upper()
-    pre_price = info.get("preMarketPrice")
-    post_price = info.get("postMarketPrice")
-
-    if state == "PRE" or (pre_price is not None and state not in ("REGULAR", "CLOSED", "POST")):
-        price = pre_price
-        change = info.get("preMarketChange", 0.0) or 0.0
-        change_pct = info.get("preMarketChangePercent", 0.0) or 0.0
-        label = "Pre"
-        icon = "🌅"
-    elif state == "POST" or (post_price is not None and state != "REGULAR"):
-        price = post_price
-        change = info.get("postMarketChange", 0.0) or 0.0
-        change_pct = info.get("postMarketChangePercent", 0.0) or 0.0
-        label = "Post"
-        icon = "🌙"
-    elif pre_price is not None and state not in ("REGULAR",):
-        price = pre_price
-        change = info.get("preMarketChange", 0.0) or 0.0
-        change_pct = info.get("preMarketChangePercent", 0.0) or 0.0
-        label = "Pre"
-        icon = "🌅"
-    elif post_price is not None:
-        price = post_price
-        change = info.get("postMarketChange", 0.0) or 0.0
-        change_pct = info.get("postMarketChangePercent", 0.0) or 0.0
-        label = "Post"
-        icon = "🌙"
-    else:
-        return None
-
-    if price is None:
-        return None
-
-    sign = "+" if change >= 0 else ""
-    arrow = _trend_arrow(change)
-    return (
-        f"{icon} <b>{label}:</b> {_format_price(price, False)}  "
-        f"{arrow} {sign}{_format_price(change, False)} ({sign}{change_pct:.2f}%)"
-    )
-
-
 def format_compact_quote(info: dict, display_symbol: str, is_crypto: bool = False) -> str:
-    """One-line quote for compare / watchlist."""
+    """One-line quote for /compare."""
     from .utils import _trend_arrow
 
     escaped = html.escape(display_symbol.upper())
@@ -226,43 +184,18 @@ def format_compact_quote(info: dict, display_symbol: str, is_crypto: bool = Fals
 
 
 async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> bytes | None:
-    """Render a simple closing-price line chart as PNG bytes."""
-    import asyncio
-    from io import BytesIO
+    """Render a closing-price line chart as PNG bytes without matplotlib."""
 
     def _render() -> bytes | None:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import yfinance as yf
-
-        hist = yf.Ticker(yfinance_symbol).history(period=period, interval="1d")
+        t = yf.Ticker(yfinance_symbol)
+        hist = t.history(period=period, interval="1d")
         if hist is None or hist.empty or "Close" not in hist.columns:
             return None
-
-        fig, ax = plt.subplots(figsize=(8, 4), dpi=120)
-        bg = "#0f1419"
-        line = "#38bdf8"
-        fig.patch.set_facecolor(bg)
-        ax.set_facecolor(bg)
-        closes = hist["Close"]
-        ax.plot(hist.index, closes, color=line, linewidth=1.8)
-        ax.fill_between(hist.index, closes, alpha=0.25, color=line)
-        ax.set_title(f"{yfinance_symbol.upper()} ({period})", color="#e2e8f0", fontsize=12)
-        ax.set_ylabel("Close", color="#94a3b8")
-        ax.tick_params(colors="#94a3b8", labelsize=8)
-        for spine in ax.spines.values():
-            spine.set_color("#1e293b")
-        ax.grid(True, alpha=0.2, color="#475569")
-        fig.autofmt_xdate()
-        fig.tight_layout()
-
-        buf = BytesIO()
-        fig.savefig(buf, format="png", facecolor=fig.get_facecolor(), edgecolor="none")
-        plt.close(fig)
-        buf.seek(0)
-        return buf.read()
+        closes = [float(x) for x in hist["Close"] if str(x).lower() != "nan" and math.isfinite(float(x))]
+        if len(closes) < 2:
+            return None
+        timestamps = [int(ts.timestamp()) for ts in hist.index]
+        return render_chart(closes, yfinance_symbol.upper(), period.upper(), timestamps=timestamps)
 
     try:
         return await asyncio.to_thread(_render)
@@ -272,6 +205,7 @@ async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> by
 
 
 async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None, is_crypto: bool = False) -> str:
+    """Format full stock or crypto quote with extended-hours pricing."""
     from .utils import DIVIDER, _format_large_number, _format_market_time, _trend_arrow
 
     display_symbol = display_symbol or yfinance_symbol
@@ -287,47 +221,163 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
 
         name = info.get("shortName") or info.get("longName") or display_symbol
         escaped_name = html.escape(name)
-
-        # Crypto emoji vs Stock emoji
         icon = "🪙" if is_crypto else "📈"
         title = f"{icon} <b>{escaped_name} ({escaped_display})</b>"
 
         lines = [title, DIVIDER]
 
-        # Price and Change, combined onto one line
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
         open_price = info.get("open") or info.get("regularMarketOpen")
 
         if prev_close is not None and prev_close != 0:
-            change = price - prev_close
-            change_pct = (change / prev_close) * 100
+            regular_change = price - prev_close
+            regular_change_pct = (regular_change / prev_close) * 100
         else:
-            # Fallback if fast_info provides them (though fast_info doesn't have change directly)
-            change = info.get("regularMarketChange", 0.0)
-            change_pct = info.get("regularMarketChangePercent", 0.0)
+            regular_change = info.get("regularMarketChange", 0.0) or 0.0
+            regular_change_pct = info.get("regularMarketChangePercent", 0.0) or 0.0
 
-        sign = "+" if change >= 0 else ""
-        arrow = _trend_arrow(change)
+        reg_sign = "+" if regular_change >= 0 else ""
+        reg_arrow = _trend_arrow(regular_change)
 
-        lines.append(
-            f"<b>Price:</b> {_format_price(price, is_crypto)}  "
-            f"{arrow} <b>Today:</b> {sign}{_format_price(change, is_crypto)} ({sign}{change_pct:.2f}%)"
-        )
+        # Extended hours logic for equities
+        if is_crypto or yfinance_symbol.startswith("^"):
+            # Crypto and Cash Indices trade with regular continuous sessions
+            chg_str = f"{reg_sign}{_format_price(regular_change, is_crypto)} ({reg_sign}{regular_change_pct:.2f}%)"
+            lines.append(f"<b>Price:</b> {_format_price(price, is_crypto)}  {reg_arrow} <b>Today:</b> {chg_str}")
+            if not is_crypto:
+                lines.append("<b>Session:</b> Regular cash index")
+            else:
+                lines.append("<b>Session:</b> 24/7 continuous trading")
+        else:
+            # Stocks and ETFs: Evaluate Trading Session & Extended Hours
+            state = str(info.get("marketState") or "").upper()
+            if not state:
+                # Infer by Eastern Time
+                now_et = datetime.now(timezone.utc).astimezone(EASTERN_TZ)
+                weekday = now_et.weekday()
+                if weekday >= 5:
+                    state = "CLOSED"
+                elif (now_et.hour, now_et.minute) < (4, 0):
+                    state = "CLOSED"
+                elif (now_et.hour, now_et.minute) < (9, 30):
+                    state = "PRE"
+                elif (now_et.hour, now_et.minute) < (16, 0):
+                    state = "REGULAR"
+                elif (now_et.hour, now_et.minute) < (20, 0):
+                    state = "POST"
+                else:
+                    state = "CLOSED"
 
-        if not is_crypto:
-            extended = _format_extended_hours(info)
-            if extended:
-                lines.append(extended)
+            pre_price = info.get("preMarketPrice")
+            post_price = info.get("postMarketPrice")
+            reg_time = info.get("regularMarketTime")
+            pre_time = info.get("preMarketTime")
+            post_time = info.get("postMarketTime")
 
-            open_close_bits = []
-            if prev_close:
-                open_close_bits.append(f"Prev Close {_format_price(prev_close, False)}")
-            if open_price:
-                open_close_bits.append(f"Open {_format_price(open_price, False)}")
-            if open_close_bits:
-                lines.append(" · ".join(open_close_bits))
+            # Validate pre-market: must not be older than regular market time if regular traded
+            pre_valid = (
+                pre_price is not None
+                and float(pre_price) > 0
+                and (not reg_time or not pre_time or pre_time >= reg_time - 86400)
+            )
+            # Validate post-market: must be from the current session (post_time >= reg_time)
+            post_valid = (
+                post_price is not None
+                and float(post_price) > 0
+                and (not reg_time or not post_time or post_time >= reg_time)
+            )
 
-        # Ranges, folded onto one line
+            if state in ("PRE", "PREPRE") and pre_valid:
+                # Active Pre-Market Session
+                ref_close = prev_close or price
+                pre_p = float(pre_price)
+                pre_change = info.get("preMarketChange")
+                if pre_change is None and ref_close:
+                    pre_change = pre_p - ref_close
+                pre_change = pre_change or 0.0
+
+                pre_pct = info.get("preMarketChangePercent")
+                if pre_pct is None and ref_close and ref_close != 0:
+                    pre_pct = (pre_change / ref_close) * 100
+                pre_pct = pre_pct or 0.0
+
+                pre_sign = "+" if pre_change >= 0 else ""
+                pre_arrow = _trend_arrow(pre_change)
+                as_of = format_et_time(pre_time or reg_time)
+
+                lines.append(f"<b>Regular Price:</b> {_format_price(price, False)}")
+                if prev_close:
+                    lines.append(f"<b>Previous Close:</b> {_format_price(prev_close, False)}")
+                lines.append("")
+                lines.append(f"🌅 <b>Pre-Market:</b> {_format_price(pre_p, False)}")
+                lines.append(f"<b>Change:</b> {pre_arrow} {pre_sign}{pre_change:,.2f} ({pre_sign}{pre_pct:.2f}%)")
+                if as_of:
+                    lines.append(f"<b>As of:</b> {as_of}")
+                lines.append("<b>Session:</b> Pre-market")
+
+            elif state in ("POST", "POSTPOST") and post_valid:
+                # Active After-Hours Session
+                ref_close = price  # regular market close
+                post_p = float(post_price)
+                post_change = info.get("postMarketChange")
+                if post_change is None and ref_close:
+                    post_change = post_p - ref_close
+                post_change = post_change or 0.0
+
+                post_pct = info.get("postMarketChangePercent")
+                if post_pct is None and ref_close and ref_close != 0:
+                    post_pct = (post_change / ref_close) * 100
+                post_pct = post_pct or 0.0
+
+                post_sign = "+" if post_change >= 0 else ""
+                post_arrow = _trend_arrow(post_change)
+                as_of = format_et_time(post_time or reg_time)
+
+                lines.append(f"<b>Regular Close:</b> {_format_price(price, False)}")
+                lines.append("")
+                lines.append(f"🌙 <b>After-Hours:</b> {_format_price(post_p, False)}")
+                lines.append(f"<b>Change:</b> {post_arrow} {post_sign}{post_change:,.2f} ({post_sign}{post_pct:.2f}%)")
+                if as_of:
+                    lines.append(f"<b>As of:</b> {as_of}")
+                lines.append("<b>Session:</b> After-hours")
+
+            elif state == "REGULAR":
+                # Regular Trading Session
+                chg_str = f"{reg_sign}{_format_price(regular_change, False)} ({reg_sign}{regular_change_pct:.2f}%)"
+                lines.append(f"<b>Price:</b> {_format_price(price, False)}  {reg_arrow} <b>Today:</b> {chg_str}")
+                open_close_bits = []
+                if prev_close:
+                    open_close_bits.append(f"Prev Close {_format_price(prev_close, False)}")
+                if open_price:
+                    open_close_bits.append(f"Open {_format_price(open_price, False)}")
+                if open_close_bits:
+                    lines.append(" · ".join(open_close_bits))
+                lines.append("<b>Session:</b> Regular market")
+
+            else:
+                # Closed Session
+                chg_str = f"{reg_sign}{_format_price(regular_change, False)} ({reg_sign}{regular_change_pct:.2f}%)"
+                p_fmt = _format_price(price, False)
+                lines.append(f"<b>Regular Close:</b> {p_fmt}  {reg_arrow} <b>Today:</b> {chg_str}")
+                if post_valid:
+                    post_p = float(post_price)
+                    post_change = info.get("postMarketChange")
+                    if post_change is None and price:
+                        post_change = post_p - price
+                    post_change = post_change or 0.0
+                    post_pct = info.get("postMarketChangePercent")
+                    if post_pct is None and price and price != 0:
+                        post_pct = (post_change / price) * 100
+                    post_pct = post_pct or 0.0
+                    post_sign = "+" if post_change >= 0 else ""
+                    as_of = format_et_time(post_time)
+                    lines.append(
+                        f"🌙 <b>After-Hours Close:</b> {_format_price(post_p, False)} ({post_sign}{post_pct:.2f}%)"
+                        + (f" as of {as_of}" if as_of else "")
+                    )
+                lines.append("<b>Session:</b> Closed")
+
+        # Ranges
         range_bits = []
         day_high = info.get("dayHigh") or info.get("regularMarketDayHigh")
         day_low = info.get("dayLow") or info.get("regularMarketDayLow")
@@ -347,7 +397,7 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
         if range_bits:
             lines.append(f"📊 <b>Range:</b> {' · '.join(range_bits)}")
 
-        # Volume & Market Cap, folded onto one line
+        # Volume & Market Cap
         stat_bits = []
         volume = info.get("lastVolume") or info.get("regularMarketVolume") or info.get("volume")
         if volume:
@@ -365,7 +415,7 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
         if stat_bits:
             lines.append(f"📦 {' · '.join(stat_bits)}")
 
-        # Meta, folded onto one line
+        # Meta & Timestamps
         meta_bits = []
         exchange = info.get("exchange")
         if exchange and not is_crypto:
@@ -376,7 +426,6 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
             meta_bits.append(html.escape(str(currency)))
 
         market_time = _format_market_time(info)
-        # fallback for timezone if time format fails
         tz = info.get("timezone")
         if market_time:
             meta_bits.append(f"as of {html.escape(market_time)}")

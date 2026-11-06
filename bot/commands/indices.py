@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from bot.config import INDEX_MAPPING, logger
+from bot.config import FUTURES_MAPPING, INDEX_MAPPING, logger
 from bot.services import _format_price, _get_yfinance_info
 from bot.utils import DIVIDER, _trend_arrow, command_guard, send_action
 
@@ -13,7 +13,7 @@ from bot.utils import DIVIDER, _trend_arrow, command_guard, send_action
 @command_guard
 @send_action(ChatAction.TYPING)
 async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get the current levels of major market indices."""
+    """Get the current levels of major market indices and market futures."""
     message = update.effective_message
     if message is None:
         logger.warning("Ignoring /indices update without an effective message")
@@ -22,7 +22,7 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command_text = message.text
     logger.info(f"Command received: {command_text} from {update.effective_user.first_name}")
 
-    blocks = [f"📊 <b>Major Market Indices</b>\n{DIVIDER}"]
+    blocks = [f"📊 <b>Major Market Indices (Cash)</b>\n{DIVIDER}"]
 
     try:
         fetch_tasks = [_get_yfinance_info(symbol) for symbol in INDEX_MAPPING]
@@ -30,7 +30,7 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for (symbol, readable_name), info in zip(INDEX_MAPPING.items(), results):
             escaped_readable_name = html.escape(readable_name)
-            if isinstance(info, Exception):
+            if isinstance(info, Exception) or not info:
                 logger.error(f"Error fetching index {symbol}: {info}")
                 blocks.append(f"🔸 <b>{escaped_readable_name}</b>\nData unavailable")
                 continue
@@ -46,8 +46,8 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 change = price - prev_close
                 change_pct = (change / prev_close) * 100
             else:
-                change = info.get("regularMarketChange", 0.0)
-                change_pct = info.get("regularMarketChangePercent", 0.0)
+                change = info.get("regularMarketChange", 0.0) or 0.0
+                change_pct = info.get("regularMarketChangePercent", 0.0) or 0.0
 
             sign = "+" if change >= 0 else ""
             arrow = _trend_arrow(change)
@@ -57,17 +57,12 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{arrow} {sign}{change:,.2f} ({sign}{change_pct:.2f}%)"
             )
 
-            # Add ranges if we have them, kept compact as one trailing clause
+            # Ranges
             range_bits = []
             day_high = info.get("dayHigh") or info.get("regularMarketDayHigh")
             day_low = info.get("dayLow") or info.get("regularMarketDayLow")
             if day_high is not None and day_low is not None:
                 range_bits.append(f"Day {day_low:,.2f}–{day_high:,.2f}")
-
-            week_high = info.get("weekHigh")
-            week_low = info.get("weekLow")
-            if week_high is not None and week_low is not None:
-                range_bits.append(f"Week {week_low:,.2f}–{week_high:,.2f}")
 
             year_high = info.get("yearHigh") or info.get("fiftyTwoWeekHigh")
             year_low = info.get("yearLow") or info.get("fiftyTwoWeekLow")
@@ -78,6 +73,39 @@ async def indices(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 line += f"\n<i>{' · '.join(range_bits)}</i>"
 
             blocks.append(line)
+
+        # Market futures section
+        try:
+            future_tasks = [_get_yfinance_info(symbol) for symbol in FUTURES_MAPPING]
+            future_results = await asyncio.gather(*future_tasks, return_exceptions=True)
+
+            future_lines = []
+            for (symbol, readable_name), info in zip(FUTURES_MAPPING.items(), future_results):
+                escaped_readable_name = html.escape(readable_name)
+                if isinstance(info, Exception) or not info:
+                    continue
+                price = info.get("lastPrice") or info.get("regularMarketPrice") or info.get("currentPrice")
+                if price is None:
+                    continue
+                prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+                if prev_close is not None and prev_close != 0:
+                    change = price - prev_close
+                    change_pct = (change / prev_close) * 100
+                else:
+                    change = info.get("regularMarketChange", 0.0) or 0.0
+                    change_pct = info.get("regularMarketChangePercent", 0.0) or 0.0
+
+                sign = "+" if change >= 0 else ""
+                arrow = _trend_arrow(change)
+                future_lines.append(
+                    f"⚡ <b>{escaped_readable_name}:</b> {_format_price(price, False)}  "
+                    f"{arrow} {sign}{change:,.2f} ({sign}{change_pct:.2f}%)"
+                )
+
+            if future_lines:
+                blocks.append("⚡ <b>U.S. Market Futures</b>\n" + "\n".join(future_lines))
+        except Exception as e:
+            logger.warning(f"Could not load futures for indices: {e}")
 
         response_text = f"\n{DIVIDER}\n".join(blocks)
 

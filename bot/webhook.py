@@ -10,10 +10,8 @@ from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder
 
-from bot.config import ALERTS_ENABLED, BOT_MODE, STORAGE_BACKEND, TELEGRAM_BOT_TOKEN, init_honeybadger, validate_config
-from bot.jobs import check_price_alerts_job, log_metrics_job
+from bot.config import BOT_MODE, TELEGRAM_BOT_TOKEN, init_honeybadger, validate_config
 from bot.main import register_handlers
-from bot.storage import init_storage
 
 
 def create_server(application, secret: str) -> web.Application:
@@ -59,8 +57,6 @@ def main():
     validate_config()
     if BOT_MODE != "webhook":
         raise RuntimeError("bot.webhook requires BOT_MODE=webhook.")
-    if STORAGE_BACKEND not in ("none", "sqlite"):
-        raise RuntimeError("The Python webhook server supports none or sqlite storage.")
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required.")
     init_honeybadger()
@@ -69,14 +65,8 @@ def main():
     server = create_server(application, os.getenv("TELEGRAM_WEBHOOK_SECRET", ""))
 
     async def startup(_server):
-        if STORAGE_BACKEND == "sqlite":
-            init_storage()
         await application.initialize()
         await application.start()
-        if application.job_queue:
-            if ALERTS_ENABLED:
-                application.job_queue.run_repeating(check_price_alerts_job, interval=60, first=15)
-            application.job_queue.run_repeating(log_metrics_job, interval=900, first=60)
 
     async def cleanup(_server):
         await application.stop()

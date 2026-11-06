@@ -77,6 +77,9 @@ jobs:
         run: |
           uv run --locked python -m pytest tests/
 
+      - name: Validate Cloudflare Worker Packaging
+        run: npx --yes wrangler@4 deploy --dry-run
+
   # JOB 3: DEPLOYMENT (Only runs on direct pushes or completed merges to main after tests pass)
   deploy:
     needs: test-and-lint

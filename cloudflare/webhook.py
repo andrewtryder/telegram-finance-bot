@@ -8,16 +8,16 @@ import html
 import json
 import math
 import re
+import time
 import urllib.parse
+import zoneinfo
 from collections import OrderedDict
 from typing import Any, Optional
 
 try:
     from chart import render_chart
-    from storage import D1Storage
 except ImportError:
     from cloudflare.chart import render_chart
-    from cloudflare.storage import D1Storage
 
 try:
     from workers import Response  # type: ignore
@@ -44,8 +44,13 @@ except ImportError:
             return str(self.body)
 
 
-COMMANDS = "/stock /stockinfo /stocknews /marketcap /crypto /indices /search /compare /chart /watchlist /alert /admin"
-KNOWN_COMMANDS = set(("start help indicies " + COMMANDS.replace("/", "")).split(" "))
+try:
+    EASTERN_TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    EASTERN_TZ = datetime.timezone.utc
+
+COMMANDS = "/stock /stockinfo /stocknews /marketcap /crypto /indices /search /compare /chart /admin"
+KNOWN_COMMANDS = set(("start help indicies alert watchlist " + COMMANDS.replace("/", "")).split(" "))
 UNAVAILABLE: set[str] = set()
 CRYPTO_BASES = set(
     (
@@ -62,6 +67,22 @@ metrics = {
     "provider_errors": 0,
 }
 recent_updates: OrderedDict[int, None] = OrderedDict()
+QUOTE_CACHE: dict[str, tuple[float, dict]] = {}
+DATA_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def format_et_time(epoch_seconds: int | float | None) -> str:
+    """Format Unix epoch timestamp into US Eastern Time (e.g. 8:42 AM ET)."""
+    if not epoch_seconds:
+        return ""
+    try:
+        dt = datetime.datetime.fromtimestamp(epoch_seconds, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+        hour = dt.hour % 12 or 12
+        minute = f"{dt.minute:02d}"
+        ampm = "AM" if dt.hour < 12 else "PM"
+        return f"{hour}:{minute} {ampm} ET"
+    except Exception:
+        return ""
 
 
 def _get_env_val(env: Any, key: str, default: str = "") -> str:
@@ -143,14 +164,23 @@ async def send_photo(env: Any, chat_id: int, photo: bytes, caption: str) -> None
         raise RuntimeError(f"Telegram sendPhoto failed: {data}")
 
 
-async def data_request(path: str, params: dict) -> dict:
+async def data_request(path: str, params: dict, ttl: int = 45) -> dict:
     query = urllib.parse.urlencode(params)
+    cache_key = f"{path}?{query}"
+    now = time.time()
+    if cache_key in DATA_CACHE:
+        expire_at, cached_data = DATA_CACHE[cache_key]
+        if now < expire_at:
+            return cached_data
+
     url = f"https://query1.finance.yahoo.com/{path}?{query}"
     response = await timed_fetch(url, {"headers": {"User-Agent": "Mozilla/5.0"}})
     if getattr(response, "status", 200) >= 400:
         raise RuntimeError("Market data provider request failed")
     text = await response.text()
-    return json.loads(text)
+    data = json.loads(text)
+    DATA_CACHE[cache_key] = (now + ttl, data)
+    return data
 
 
 async def company_summary(symbol: str) -> dict:
@@ -217,7 +247,17 @@ def market_symbol(raw: Any, crypto: bool = False, infer_crypto: bool = False) ->
 
 
 async def quote(_env: Any, symbol: str) -> dict:
-    data = await data_request(f"v8/finance/chart/{urllib.parse.quote(symbol)}", {"range": "5d", "interval": "1d"})
+    now = time.time()
+    if symbol in QUOTE_CACHE:
+        expire_at, cached_q = QUOTE_CACHE[symbol]
+        if now < expire_at:
+            return cached_q
+
+    data = await data_request(
+        f"v8/finance/chart/{urllib.parse.quote(symbol)}",
+        {"range": "5d", "interval": "1d", "includePrePost": "true"},
+        ttl=45,
+    )
     result_list = data.get("chart", {}).get("result") or []
     if not result_list:
         raise RuntimeError("Quote missing")
@@ -247,7 +287,7 @@ async def quote(_env: Any, symbol: str) -> dict:
         except Exception:
             pass
 
-    previous = to_number(meta.get("previousClose"))
+    previous = to_number(meta.get("chartPreviousClose") or meta.get("previousClose"))
     if previous is None and current_index >= 0:
         for i in range(current_index - 1, -1, -1):
             if i < len(closes) and to_number(closes[i]) is not None:
@@ -260,7 +300,7 @@ async def quote(_env: Any, symbol: str) -> dict:
     opens = bars.get("open") or []
     open_val = to_number(opens[current_index]) if current_index >= 0 and current_index < len(opens) else None
 
-    return {
+    res = {
         "symbol": symbol,
         "meta": meta,
         "price": price,
@@ -269,6 +309,8 @@ async def quote(_env: Any, symbol: str) -> dict:
         "weekLow": min(lows) if lows else None,
         "weekHigh": max(highs) if highs else None,
     }
+    QUOTE_CACHE[symbol] = (now + 45, res)
+    return res
 
 
 def format_number(value: float, crypto: bool = False) -> str:
@@ -326,44 +368,148 @@ def compact_number(value: Any) -> Optional[str]:
 
 
 def format_quote(q: dict, crypto: bool = False) -> str:
+    """Format full stock or crypto quote with extended-hours pricing."""
     meta = q.get("meta") or {}
     name = meta.get("shortName") or meta.get("longName") or q["symbol"]
     display = q["symbol"].replace("-", "/") if crypto else q["symbol"]
     lines = [f"{'🪙' if crypto else '📈'} <b>{html.escape(name)} ({html.escape(display)})</b>", DIVIDER]
 
-    change = change_text(q, crypto)
+    price = q["price"]
+    prev_close = q.get("previous")
+    open_val = q.get("open")
     curr = meta.get("currency")
-    p_str = format_price(q["price"], curr, crypto)
-    lines.append(f"<b>Price:</b> {p_str}{f'  <b>Today:</b> {change}' if change else ''}")
+    p_str = format_price(price, curr, crypto)
+    change = change_text(q, crypto)
 
     company = q.get("company") or {}
-    session = company.get("price") or {}
-    state = str(session.get("marketState") or "").upper()
-    ext_raw = (
-        session.get("preMarketPrice") if state == "PRE" else session.get("postMarketPrice") if state == "POST" else None
-    )
-    ext_val = to_number(raw_val(ext_raw))
+    comp_price = company.get("price") or {}
 
-    if not crypto and ext_val is not None:
-        raw_change = session.get("preMarketChange") if state == "PRE" else session.get("postMarketChange")
-        ext_change = to_number(raw_val(raw_change))
-        raw_pct = session.get("preMarketChangePercent") if state == "PRE" else session.get("postMarketChangePercent")
-        ext_pct = to_number(raw_val(raw_pct))
-        arrow = "" if ext_change is None else " 🔺" if ext_change > 0 else " 🔻" if ext_change < 0 else " ▪️"
-        delta = "" if ext_change is None else f" {'+' if ext_change >= 0 else '-'}{format_price(abs(ext_change), curr)}"
-        pct_str = "" if ext_pct is None else f" ({'+' if ext_pct >= 0 else ''}{ext_pct:.2f}%)"
-        label = "Pre" if state == "PRE" else "Post"
-        lines.append(
-            f"{'🌅' if state == 'PRE' else '🌙'} <b>{label}:</b> {format_price(ext_val, curr)}{arrow}{delta}{pct_str}"
+    if crypto or q["symbol"].startswith("^"):
+        # Crypto and Cash indices
+        lines.append(f"<b>Price:</b> {p_str}{f'  <b>Today:</b> {change}' if change else ''}")
+        if crypto:
+            lines.append("<b>Session:</b> 24/7 continuous trading")
+        else:
+            lines.append("<b>Session:</b> Regular cash index")
+    else:
+        # Equities: evaluate trading session & extended hours
+        state = str(meta.get("marketState") or "").upper()
+        if not state:
+            now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(EASTERN_TZ)
+            weekday = now_et.weekday()
+            if weekday >= 5:
+                state = "CLOSED"
+            elif (now_et.hour, now_et.minute) < (4, 0):
+                state = "CLOSED"
+            elif (now_et.hour, now_et.minute) < (9, 30):
+                state = "PRE"
+            elif (now_et.hour, now_et.minute) < (16, 0):
+                state = "REGULAR"
+            elif (now_et.hour, now_et.minute) < (20, 0):
+                state = "POST"
+            else:
+                state = "CLOSED"
+
+        pre_price = to_number(raw_val(meta.get("preMarketPrice") or comp_price.get("preMarketPrice")))
+        post_price = to_number(raw_val(meta.get("postMarketPrice") or comp_price.get("postMarketPrice")))
+        reg_time = to_number(meta.get("regularMarketTime"))
+        pre_time = to_number(meta.get("preMarketTime"))
+        post_time = to_number(meta.get("postMarketTime"))
+
+        pre_valid = (
+            pre_price is not None and pre_price > 0 and (not reg_time or not pre_time or pre_time >= reg_time - 86400)
+        )
+        post_valid = (
+            post_price is not None and post_price > 0 and (not reg_time or not post_time or post_time >= reg_time)
         )
 
-    opening = []
-    if q.get("previous") is not None:
-        opening.append(f"Prev Close {format_price(q['previous'], curr, crypto)}")
-    if q.get("open") is not None:
-        opening.append(f"Open {format_price(q['open'], curr, crypto)}")
-    if opening:
-        lines.append(" · ".join(opening))
+        if state in ("PRE", "PREPRE") and pre_valid:
+            ref_close = prev_close or price
+            pre_change = to_number(raw_val(meta.get("preMarketChange") or comp_price.get("preMarketChange")))
+            if pre_change is None and ref_close:
+                pre_change = pre_price - ref_close
+            pre_change = pre_change or 0.0
+
+            pre_pct = to_number(raw_val(meta.get("preMarketChangePercent") or comp_price.get("preMarketChangePercent")))
+            if pre_pct is None and ref_close and ref_close != 0:
+                pre_pct = (pre_change / ref_close) * 100
+            pre_pct = pre_pct or 0.0
+
+            sign = "+" if pre_change >= 0 else "-"
+            arrow = "🔺" if pre_change > 0 else "🔻" if pre_change < 0 else "▪️"
+            as_of = format_et_time(pre_time or reg_time)
+
+            lines.append(f"<b>Regular Price:</b> {p_str}")
+            if prev_close:
+                lines.append(f"<b>Previous Close:</b> {format_price(prev_close, curr)}")
+            lines.append("")
+            lines.append(f"🌅 <b>Pre-Market:</b> {format_price(pre_price, curr)}")
+            lines.append(
+                f"<b>Change:</b> {arrow} {sign}{format_price(abs(pre_change), curr)} ({sign}{abs(pre_pct):.2f}%)"
+            )
+            if as_of:
+                lines.append(f"<b>As of:</b> {as_of}")
+            lines.append("<b>Session:</b> Pre-market")
+
+        elif state in ("POST", "POSTPOST") and post_valid:
+            ref_close = price
+            post_change = to_number(raw_val(meta.get("postMarketChange") or comp_price.get("postMarketChange")))
+            if post_change is None and ref_close:
+                post_change = post_price - ref_close
+            post_change = post_change or 0.0
+
+            post_pct = to_number(
+                raw_val(meta.get("postMarketChangePercent") or comp_price.get("postMarketChangePercent"))
+            )
+            if post_pct is None and ref_close and ref_close != 0:
+                post_pct = (post_change / ref_close) * 100
+            post_pct = post_pct or 0.0
+
+            sign = "+" if post_change >= 0 else "-"
+            arrow = "🔺" if post_change > 0 else "🔻" if post_change < 0 else "▪️"
+            as_of = format_et_time(post_time or reg_time)
+
+            lines.append(f"<b>Regular Close:</b> {p_str}")
+            lines.append("")
+            lines.append(f"🌙 <b>After-Hours:</b> {format_price(post_price, curr)}")
+            lines.append(
+                f"<b>Change:</b> {arrow} {sign}{format_price(abs(post_change), curr)} ({sign}{abs(post_pct):.2f}%)"
+            )
+            if as_of:
+                lines.append(f"<b>As of:</b> {as_of}")
+            lines.append("<b>Session:</b> After-hours")
+
+        elif state == "REGULAR":
+            lines.append(f"<b>Price:</b> {p_str}{f'  <b>Today:</b> {change}' if change else ''}")
+            opening = []
+            if prev_close is not None:
+                opening.append(f"Prev Close {format_price(prev_close, curr)}")
+            if open_val is not None:
+                opening.append(f"Open {format_price(open_val, curr)}")
+            if opening:
+                lines.append(" · ".join(opening))
+            lines.append("<b>Session:</b> Regular market")
+
+        else:
+            lines.append(f"<b>Regular Close:</b> {p_str}{f'  <b>Today:</b> {change}' if change else ''}")
+            if post_valid:
+                post_change = to_number(raw_val(meta.get("postMarketChange") or comp_price.get("postMarketChange")))
+                if post_change is None and price:
+                    post_change = post_price - price
+                post_change = post_change or 0.0
+                post_pct = to_number(
+                    raw_val(meta.get("postMarketChangePercent") or comp_price.get("postMarketChangePercent"))
+                )
+                if post_pct is None and price and price != 0:
+                    post_pct = (post_change / price) * 100
+                post_pct = post_pct or 0.0
+                sign = "+" if post_change >= 0 else "-"
+                as_of = format_et_time(post_time)
+                lines.append(
+                    f"🌙 <b>After-Hours Close:</b> {format_price(post_price, curr)} ({sign}{abs(post_pct):.2f}%)"
+                    + (f" as of {as_of}" if as_of else "")
+                )
+            lines.append("<b>Session:</b> Closed")
 
     r_list = ranges(q, crypto)
     if r_list:
@@ -372,7 +518,7 @@ def format_quote(q: dict, crypto: bool = False) -> str:
     vol = compact_number(meta.get("regularMarketVolume"))
     summary = company.get("summaryDetail") or {}
     avg_vol = compact_number(raw_val(summary.get("averageVolume") or summary.get("averageDailyVolume3Month")))
-    mcap = compact_number(raw_val(session.get("marketCap") or summary.get("marketCap")))
+    mcap = compact_number(raw_val(comp_price.get("marketCap") or summary.get("marketCap")))
 
     stats = []
     if vol is not None:
@@ -408,225 +554,77 @@ def format_compact(q: dict, label: Optional[str] = None) -> str:
 
 
 async def reply_for(command: str, args: list[str], message: dict, env: Any) -> Any:
-    watchlist_enabled = _get_env_val(env, "WATCHLIST_ENABLED", "false") == "true"
-    alerts_enabled = _get_env_val(env, "ALERTS_ENABLED", "false") == "true"
+    if command in ("alert", "watchlist"):
+        return (
+            "⚠️ <b>Notice:</b> Watchlists and price alerts have been retired.\n"
+            "The bot is now a stateless financial market quote service."
+        )
 
     if command in ("start", "help"):
         if command == "help" and args:
             name = args[0].lstrip("/").lower()
+            if name in ("alert", "watchlist"):
+                return (
+                    f"<b>/{name}</b>\n{DIVIDER}\n"
+                    "⚠️ <b>Notice:</b> Watchlists and price alerts have been retired.\n"
+                    "The bot is now a stateless financial market quote service."
+                )
             if name in UNAVAILABLE:
                 return f"/{html.escape(name)} is unavailable in webhook mode."
             help_dict = {
-                "stock": (
-                    "<b>/stock &lt;ticker&gt;</b>\n"
-                    "Shows a quote snapshot for a stock, ETF, fund, or Yahoo Finance-compatible symbol."
-                ),
-                "crypto": (
-                    "<b>/crypto &lt;symbol&gt;</b>\n"
-                    "Shows a quote snapshot for a crypto pair. Bare symbols default to USD."
-                ),
-                "indices": (
-                    "<b>/indices</b>\n"
-                    "Shows current levels and ranges of major market indices (S&amp;P 500, Dow Jones, Nasdaq)."
-                ),
-                "search": ("<b>/search &lt;query&gt;</b>\nSearches Yahoo Finance for a given company name or symbol."),
-                "compare": (
-                    "<b>/compare &lt;t1&gt; &lt;t2&gt; [t3] [t4]</b>\nCompares 2–4 stock or crypto quotes side by side."
-                ),
-                "chart": (
-                    "<b>/chart &lt;ticker&gt; [1mo|3mo|6mo|1y]</b>\n"
-                    "Renders a closing-price line chart as a PNG (default period: 1mo)."
-                ),
-                "stockinfo": (
-                    "<b>/stockinfo &lt;ticker&gt;</b>\n"
-                    "Fetches company profile information including sector, industry, description, "
-                    "website, and basic valuation metrics."
-                ),
-                "stocknews": (
-                    "<b>/stocknews &lt;ticker&gt;</b>\nFetches the latest 5 news headlines for a given stock symbol."
-                ),
-                "marketcap": (
-                    "<b>/marketcap &lt;ticker&gt;</b>\nFetches the current market capitalization of a company."
-                ),
-                "watchlist": (
-                    "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
-                    "Personal watchlist (max 10), shared across your chats."
-                ),
-                "alert": (
-                    "<b>/alert add &lt;ticker&gt; above|below &lt;price&gt;</b>\n"
-                    "<b>/alert list</b> · <b>/alert remove &lt;id&gt;</b>\n"
-                    "One-shot price alerts (max 20 per chat)."
-                ),
-                "admin": "<b>/admin stats</b> — owner-only usage statistics",
+                "stock": "<b>/stock &lt;ticker&gt;</b>\nQuote snapshot for a stock or ETF (with pre/post-market).",
+                "crypto": "<b>/crypto &lt;symbol&gt;</b>\nQuote snapshot for a crypto pair (e.g. BTC, ETH).",
+                "indices": "<b>/indices</b>\nLevels of major market indices and active U.S. futures.",
+                "indicies": "<b>/indices</b>\nLevels of major market indices and active U.S. futures.",
+                "search": "<b>/search &lt;query&gt;</b>\nSearch Yahoo Finance for symbols matching a name.",
+                "compare": "<b>/compare &lt;t1&gt; &lt;t2&gt;</b>\nCompare 2–4 stock or crypto quotes side by side.",
+                "chart": "<b>/chart &lt;ticker&gt; [1mo|3mo|6mo|1y]</b>\nClosing-price line chart PNG.",
+                "stockinfo": "<b>/stockinfo &lt;ticker&gt;</b>\nCompany profile, sector, industry, and valuation.",
+                "stocknews": "<b>/stocknews &lt;ticker&gt;</b>\nRecent news headlines for a stock symbol.",
+                "marketcap": "<b>/marketcap &lt;ticker&gt;</b>\nCurrent market capitalization of a company.",
+                "admin": "<b>/admin stats</b>\nUptime, command counts, and error stats (admin only).",
             }
-            key = "indices" if name == "indicies" else name
-            entry = help_dict.get(key)
-            if entry:
-                disabled = (name == "watchlist" and not watchlist_enabled) or (name == "alert" and not alerts_enabled)
-                return f"{entry}\n\n<i>Currently disabled on this bot.</i>" if disabled else entry
+            if name in help_dict:
+                return help_dict[name]
 
-        user_name = (message.get("from") or {}).get("first_name", "there")
         return "\n".join(
             [
-                f"👋 Hello {html.escape(user_name)}! I am your Financial Market Bot 📈",
+                "👋 <b>Financial Market Bot</b> 📈",
                 DIVIDER,
                 "",
                 "📈 <b>Stocks</b>",
-                "📊 <b>/stock &lt;ticker&gt;</b> - Current price of a stock",
+                "📊 <b>/stock &lt;ticker&gt;</b> - Current quote with pre/post-market",
                 "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Detailed company info",
                 "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
                 "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
                 "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
-                (
-                    f"👀 <b>/watchlist</b> - Personal watchlist (shared across chats)"
-                    f"{'' if watchlist_enabled else ' — disabled'}"
-                ),
                 "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
-                f"🔔 <b>/alert</b> - One-shot price alerts (chat-owned){'' if alerts_enabled else ' — disabled'}",
                 "",
                 "🪙 <b>Crypto &amp; Markets</b>",
                 "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",
-                "📈 <b>/indices</b> - Levels of major market indices",
+                "📈 <b>/indices</b> - Major market indices and futures",
                 "",
                 "🔍 <b>Search</b>",
                 "🔍 <b>/search &lt;query&gt;</b> - Search for a symbol",
                 "",
                 DIVIDER,
-                "💡 For more info on a command, use <b>/help &lt;command&gt;</b> (e.g., <code>/help stock</code>)",
-                "",
-                (
-                    "⚠️ <i>Disclaimer: Data is for informational purposes only, may be delayed, "
-                    "and does not constitute financial advice.</i>"
-                ),
+                "💡 Use <b>/help &lt;command&gt;</b> for more details.",
+                "⚠️ <i>Disclaimer: Data is for informational purposes only.</i>",
             ]
         )
 
-    if command in UNAVAILABLE:
-        return f"/{command} is unavailable in webhook mode."
-
-    if command == "watchlist":
-        if not watchlist_enabled:
-            return "Watchlists are disabled on this bot."
-        from_user = message.get("from") or {}
-        user_id = from_user.get("id")
-        if not user_id:
-            return "Watchlists are personal and need your Telegram user identity."
-
-        db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-        storage = D1Storage(db)
-        if not args:
-            symbols = await storage.watchlist(user_id)
-            if not symbols:
-                return "Your watchlist is empty. Add one with <code>/watchlist add AAPL</code>"
-
-            async def get_quote_safe(sym):
-                try:
-                    return await quote(env, sym)
-                except Exception:
-                    return None
-
-            quotes = await asyncio.gather(*(get_quote_safe(s) for s in symbols))
-            lines = ["👀 <b>Your Watchlist</b>", DIVIDER]
-            for sym, q in zip(symbols, quotes):
-                if q:
-                    lines.append(format_compact(q, sym.replace("-USD", "/USD")))
-                else:
-                    lines.append(f"<b>{html.escape(sym)}</b>: Data unavailable")
-            return "\n".join(lines)
-
-        action = args[0].lower()
-        if action in ("add", "remove", "rm", "del", "delete"):
-            if len(args) < 2:
-                return f"Usage: <code>/watchlist {html.escape(action)} TICKER</code>"
-            sym = market_symbol(args[1], False, True)
-            if not sym:
-                return "Invalid ticker or crypto symbol format."
-            ok, msg = (
-                await storage.add_watchlist(user_id, sym)
-                if action == "add"
-                else await storage.remove_watchlist(user_id, sym)
-            )
-            icon = "✅" if ok else "⚠️"
-            return f"{icon} {html.escape(msg)}"
-
-        return (
-            "Usage:\n<code>/watchlist</code> — show quotes\n"
-            "<code>/watchlist add AAPL</code>\n<code>/watchlist remove AAPL</code>"
-        )
-
-    if command == "alert":
-        if not alerts_enabled:
-            return "Price alerts are disabled on this bot."
-        chat = message.get("chat") or {}
-        chat_id = chat.get("id")
-        from_user = message.get("from") or {}
-        user_id = from_user.get("id")
-        db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-        storage = D1Storage(db)
-        action = (args[0] if args else "list").lower()
-
-        if action in ("list", "ls"):
-            rows = await storage.alerts(chat_id)
-            if not rows:
-                return "No alerts. Create one with <code>/alert add AAPL above 200</code>"
-            lines = ["🔔 <b>Alerts</b>", DIVIDER]
-            for row in rows:
-                r_id = row["id"] if isinstance(row, dict) else getattr(row, "id", None)
-                r_sym = row["symbol"] if isinstance(row, dict) else getattr(row, "symbol", None)
-                r_dir = row["direction"] if isinstance(row, dict) else getattr(row, "direction", None)
-                r_thr = row["threshold"] if isinstance(row, dict) else getattr(row, "threshold", None)
-                lines.append(f"<b>#{r_id}</b> {html.escape(str(r_sym))} {html.escape(str(r_dir))} {r_thr}")
-            lines.extend(["", "Remove with <code>/alert remove ID</code>"])
-            return "\n".join(lines)
-
-        if action == "add":
-            if len(args) < 4:
-                return "Usage: <code>/alert add AAPL above 200</code> or <code>/alert add BTC above 100000</code>"
-            sym = market_symbol(args[1], False, True)
-            if not sym:
-                return "Invalid ticker or crypto symbol format."
-            direction = args[2].lower()
-            if direction not in ("above", "below"):
-                return "Direction must be <code>above</code> or <code>below</code>."
-            try:
-                threshold = float(args[3].replace("$", "").replace(",", ""))
-                if not math.isfinite(threshold):
-                    raise ValueError
-            except ValueError:
-                return "Price must be a number."
-            if not user_id:
-                return "Alerts need your Telegram user identity."
-
-            ok, msg = await storage.add_alert(chat_id, user_id, sym, direction, threshold)
-            icon = "✅" if ok else "⚠️"
-            return f"{icon} {html.escape(msg)}"
-
-        if action in ("remove", "rm", "del", "delete"):
-            if len(args) < 2:
-                return "Usage: <code>/alert remove 3</code>"
-            try:
-                alert_id = int(args[1].lstrip("#"))
-                if alert_id <= 0:
-                    raise ValueError
-            except ValueError:
-                return "Alert ID must be a number."
-            ok, msg = await storage.remove_alert(chat_id, alert_id)
-            icon = "✅" if ok else "⚠️"
-            return f"{icon} {html.escape(msg)}"
-
-        return "Usage:\n<code>/alert add AAPL above 200</code>\n<code>/alert list</code>\n<code>/alert remove 3</code>"
-
     if command == "admin":
-        admin_ids = parse_ids(_get_env_val(env, "ADMIN_USER_IDS"))
-        from_user = message.get("from") or {}
-        if str(from_user.get("id")) not in admin_ids:
-            return "Access denied."
-        if args and args[0].lower() not in ("stats", "status", "metrics"):
+        if not args or args[0].lower() != "stats":
             return "Usage: <code>/admin stats</code>"
-        counts = [f"  {html.escape(k)}: {v}" for k, v in sorted(metrics["commands"].items())]
+        user_id = str(message.get("from", {}).get("id") or "")
+        admins = parse_ids(_get_env_val(env, "ADMIN_USER_IDS"))
+        if not admins or user_id not in admins:
+            return "Unauthorized."
+        counts = [f"  /{k}: {v}" for k, v in sorted(metrics["commands"].items())]
         lines = [
-            "📊 <b>Admin stats</b>",
+            "📊 <b>Admin Stats</b>",
             DIVIDER,
+            "<b>Runtime:</b> Cloudflare Python Worker (stateless)",
             "",
             "<b>Commands</b>",
             *(counts if counts else ["  (none yet)"]),
@@ -639,22 +637,37 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
 
     if command in ("indices", "indicies"):
 
-        async def fetch_idx(sym):
+        async def fetch_item(sym):
             try:
                 return await quote(env, sym)
             except Exception:
                 return None
 
-        results = await asyncio.gather(*(fetch_idx(s) for s in ["^GSPC", "^DJI", "^IXIC"]))
-        blocks = ["📊 <b>Major Market Indices</b>"]
-        names = ["S&P 500", "Dow Jones", "Nasdaq"]
-        for name, q in zip(names, results):
+        cash_syms = ["^GSPC", "^DJI", "^IXIC"]
+        cash_names = ["S&P 500", "Dow Jones", "Nasdaq"]
+        future_syms = ["ES=F", "NQ=F", "YM=F"]
+        future_names = ["S&P 500 Futures", "Nasdaq 100 Futures", "Dow Futures"]
+
+        results = await asyncio.gather(*(fetch_item(s) for s in cash_syms + future_syms))
+        cash_results = results[:3]
+        future_results = results[3:]
+
+        blocks = ["📊 <b>Major Market Indices (Cash)</b>"]
+        for name, q in zip(cash_names, cash_results):
             if not q:
                 blocks.append(f"🔸 <b>{html.escape(name)}</b>: Data unavailable")
             else:
                 rng = ranges(q)
                 rng_str = f"\n<i>{' · '.join(rng)}</i>" if rng else ""
                 blocks.append(f"🔸 {format_compact(q, name)}{rng_str}")
+
+        future_lines = []
+        for name, q in zip(future_names, future_results):
+            if q:
+                future_lines.append(f"⚡ {format_compact(q, name)}")
+        if future_lines:
+            blocks.append("⚡ <b>U.S. Market Futures</b>\n" + "\n".join(future_lines))
+
         return f"\n{DIVIDER}\n".join(blocks)
 
     if command == "search":
@@ -663,7 +676,7 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
         query = " ".join(args)
         if len(query) > 64:
             return "Search query is too long. Maximum length is 64 characters."
-        data = await data_request("v1/finance/search", {"q": query, "quotesCount": "8", "newsCount": "0"})
+        data = await data_request("v1/finance/search", {"q": query, "quotesCount": "8", "newsCount": "0"}, ttl=300)
         valid_types = {"EQUITY", "ETF", "CRYPTOCURRENCY", "INDEX", "MUTUALFUND", "CURRENCY"}
         quotes_raw = data.get("quotes") or []
         filtered = [x for x in quotes_raw if str(x.get("quoteType") or "").upper() in valid_types][:5]
@@ -684,7 +697,7 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
         sym = market_symbol(args[0] if args else "")
         if not sym:
             return "Please provide a stock ticker. Example: <code>/stocknews AAPL</code>"
-        data = await data_request("v1/finance/search", {"q": sym, "quotesCount": "0", "newsCount": "5"})
+        data = await data_request("v1/finance/search", {"q": sym, "quotesCount": "0", "newsCount": "5"}, ttl=300)
         news = (data.get("news") or [])[:5]
         if not news:
             return f"No recent news found for {html.escape(sym)}."
@@ -752,7 +765,11 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
         if not sym:
             return "Invalid ticker or crypto symbol format."
 
-        data = await data_request(f"v8/finance/chart/{urllib.parse.quote(sym)}", {"range": period, "interval": "1d"})
+        data = await data_request(
+            f"v8/finance/chart/{urllib.parse.quote(sym)}",
+            {"range": period, "interval": "1d"},
+            ttl=120,
+        )
         res_list = data.get("chart", {}).get("result") or []
         res = res_list[0] if res_list else {}
         quotes = res.get("indicators", {}).get("quote") or [{}]
@@ -769,7 +786,7 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
             return "Usage: <code>/compare AAPL MSFT</code>"
         symbols = [market_symbol(x, False, True) for x in args]
         if any(not s for s in symbols):
-            return "Invalid ticker or crypto symbol format."
+            return "One or more ticker symbols are invalid."
 
         async def fetch_one(s):
             try:
@@ -812,70 +829,13 @@ def same_secret(actual: str, expected: str) -> bool:
 
 
 def validate_webhook_config(env: Any) -> None:
-    mode = _get_env_val(env, "BOT_MODE")
+    mode = _get_env_val(env, "BOT_MODE", "webhook")
     if mode != "webhook":
         raise ValueError("BOT_MODE must be webhook")
     token = _get_env_val(env, "TELEGRAM_BOT_TOKEN")
     secret = _get_env_val(env, "TELEGRAM_WEBHOOK_SECRET")
     if not token or not re.match(r"^[A-Za-z0-9_-]{1,256}$", secret):
         raise ValueError("Telegram token and valid webhook secret are required")
-
-    watchlists = _get_env_val(env, "WATCHLIST_ENABLED", "false")
-    alerts = _get_env_val(env, "ALERTS_ENABLED", "false")
-    if watchlists not in ("true", "false") or alerts not in ("true", "false"):
-        raise ValueError("Feature flags must be true or false")
-
-    backend = _get_env_val(env, "STORAGE_BACKEND", "none")
-    if backend not in ("none", "d1"):
-        raise ValueError("Cloudflare Workers only supports none or d1 storage backend")
-
-    db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-    if backend == "d1" and not db:
-        raise ValueError("D1 storage backend requires a DB binding")
-    if (watchlists == "true" or alerts == "true") and (backend != "d1" or not db):
-        raise ValueError("Enabled watchlists or alerts require persistent storage (d1) and a DB binding")
-
-
-async def check_alerts(env: Any) -> None:
-    validate_webhook_config(env)
-    if _get_env_val(env, "ALERTS_ENABLED", "false") != "true":
-        return
-    db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-    storage = D1Storage(db)
-    rows = await storage.all_alerts()
-    prices: dict[str, Any] = {}
-
-    for row in rows:
-        r_id = row["id"] if isinstance(row, dict) else getattr(row, "id", None)
-        r_chat = row["chat_id"] if isinstance(row, dict) else getattr(row, "chat_id", None)
-        r_sym = row["symbol"] if isinstance(row, dict) else getattr(row, "symbol", None)
-        r_dir = row["direction"] if isinstance(row, dict) else getattr(row, "direction", None)
-        r_thr = row["threshold"] if isinstance(row, dict) else getattr(row, "threshold", None)
-
-        if r_sym not in prices:
-            try:
-                prices[r_sym] = await quote(env, r_sym)
-            except Exception:
-                prices[r_sym] = None
-
-        q = prices[r_sym]
-        if not q:
-            continue
-        curr_price = q["price"]
-        condition = curr_price >= r_thr if r_dir == "above" else curr_price <= r_thr
-        if not condition:
-            continue
-
-        if not await storage.claim_alert(r_id):
-            continue
-
-        try:
-            p_str = format_price(curr_price, q.get("meta", {}).get("currency"), r_sym.endswith("-USD"))
-            text = f"🔔 <b>Alert #{r_id}</b>\n{html.escape(r_sym)} is {p_str} ({html.escape(r_dir)} {r_thr})"
-            await telegram(env, "sendMessage", {"chat_id": r_chat, "text": text, "parse_mode": "HTML"})
-            await storage.finish_alert(r_id)
-        except Exception:
-            await storage.release_alert(r_id)
 
 
 async def handle_request(request: Any, env: Any) -> Response:
@@ -932,20 +892,9 @@ async def handle_request(request: Any, env: Any) -> Response:
     if not message or not isinstance(message.get("text"), str) or not (message.get("chat") or {}).get("id"):
         return Response.json({"ok": True})
 
-    # Duplicate suppression
-    backend = _get_env_val(env, "STORAGE_BACKEND", "none")
-    db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-    if backend == "d1" and db:
-        storage = D1Storage(db)
-        is_new = await storage.claim_update(update_id)
-        if not is_new:
-            return Response.json({"ok": True, "duplicate": True})
-    else:
-        if update_id in recent_updates:
-            return Response.json({"ok": True, "duplicate": True})
-        recent_updates[update_id] = None
-        if len(recent_updates) > 10000:
-            recent_updates.popitem(last=False)
+    # In-memory deduplication (LRU up to 1000 items)
+    if update_id in recent_updates:
+        return Response.json({"ok": True, "duplicate": True})
 
     text_msg = message["text"]
     match = re.match(r"^/([a-zA-Z]+)(?:@([a-zA-Z0-9_]+))?(?:\s|$)", text_msg)
@@ -974,17 +923,19 @@ async def handle_request(request: Any, env: Any) -> Response:
             try:
                 reply_text = await reply_for(command, args, message, env)
             except Exception:
-                if command in ("watchlist", "alert"):
-                    metrics["errors"] += 1
-                    reply_text = "Storage is unavailable right now. Please try again later."
-                else:
-                    metrics["provider_errors"] += 1
-                    reply_text = "Market data is unavailable right now. Please try again later."
+                metrics["provider_errors"] += 1
+                reply_text = "Market data is unavailable right now. Please try again later."
 
         if isinstance(reply_text, dict) and "image" in reply_text:
             await send_photo(env, chat_id, reply_text["image"], reply_text["caption"])
         elif reply_text is not None:
             await telegram(env, "sendMessage", {"chat_id": chat_id, "text": reply_text, "parse_mode": "HTML"})
+
+        # Record successfully processed update id
+        recent_updates[update_id] = None
+        if len(recent_updates) > 1000:
+            recent_updates.popitem(last=False)
+
         return Response.json({"ok": True})
     except Exception:
         metrics["errors"] += 1
