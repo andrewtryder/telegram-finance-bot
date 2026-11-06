@@ -16,3 +16,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_chat ON alerts(chat_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol);
+CREATE TABLE IF NOT EXISTS processed_updates (
+  update_id INTEGER PRIMARY KEY,
+  created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+);

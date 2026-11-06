@@ -179,6 +179,27 @@ async def test_check_price_alerts_job_fetches_symbols_in_parallel(tmp_storage):
     assert called == {"AAPL", "MSFT"}
 
 
+@pytest.mark.asyncio
+async def test_check_price_alerts_job_retains_alert_on_send_failure(tmp_storage):
+    from bot.jobs import check_price_alerts_job
+
+    ok, _, alert_id = storage.alert_add(100, 7, "AAPL", "above", 100.0)
+    assert ok
+    context = MagicMock()
+    context.bot.send_message = AsyncMock(side_effect=RuntimeError("Telegram network failure"))
+
+    with patch("bot.jobs._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = {"regularMarketPrice": 150.0}
+        await check_price_alerts_job(context)
+
+    # Message was attempted
+    context.bot.send_message.assert_awaited_once()
+    # Alert is retained in storage so it can be retried on next execution
+    alerts = storage.alert_list(100)
+    assert len(alerts) == 1
+    assert alerts[0]["id"] == alert_id
+
+
 def test_metrics_provider_error():
     from bot.metrics import record_provider_error
 

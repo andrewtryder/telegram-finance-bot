@@ -95,3 +95,9 @@ class D1Storage:
     async def release_alert(self, alert_id: int):
         stmt = self.db.prepare("UPDATE alerts SET claimed_until=NULL WHERE id=?").bind(alert_id)
         await stmt.run()
+
+    async def claim_update(self, update_id: int) -> bool:
+        """Atomically record update_id if not already processed. Returns True if new, False if duplicate."""
+        stmt = self.db.prepare("INSERT OR IGNORE INTO processed_updates (update_id) VALUES (?)").bind(update_id)
+        res = await stmt.run()
+        return bool(self._changes(res))

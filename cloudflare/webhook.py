@@ -9,6 +9,7 @@ import json
 import math
 import re
 import urllib.parse
+from collections import OrderedDict
 from typing import Any, Optional
 
 try:
@@ -60,6 +61,7 @@ metrics = {
     "errors": 0,
     "provider_errors": 0,
 }
+recent_updates: OrderedDict[int, None] = OrderedDict()
 
 
 def _get_env_val(env: Any, key: str, default: str = "") -> str:
@@ -824,12 +826,14 @@ def validate_webhook_config(env: Any) -> None:
         raise ValueError("Feature flags must be true or false")
 
     backend = _get_env_val(env, "STORAGE_BACKEND", "none")
-    if backend not in ("none", "d1", "sqlite"):
-        raise ValueError("Webhook storage must be none, sqlite, or d1")
+    if backend not in ("none", "d1"):
+        raise ValueError("Cloudflare Workers only supports none or d1 storage backend")
 
     db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
-    if (watchlists == "true" or alerts == "true") and (backend not in ("d1", "sqlite") or not db):
-        raise ValueError("Enabled features require a database")
+    if backend == "d1" and not db:
+        raise ValueError("D1 storage backend requires a DB binding")
+    if (watchlists == "true" or alerts == "true") and (backend != "d1" or not db):
+        raise ValueError("Enabled watchlists or alerts require persistent storage (d1) and a DB binding")
 
 
 async def check_alerts(env: Any) -> None:
@@ -924,9 +928,24 @@ async def handle_request(request: Any, env: Any) -> Response:
     except Exception:
         return Response("Bad request", status=400)
 
-    message = update.get("message")
+    message = update.get("message") or update.get("edited_message")
     if not message or not isinstance(message.get("text"), str) or not (message.get("chat") or {}).get("id"):
         return Response.json({"ok": True})
+
+    # Duplicate suppression
+    backend = _get_env_val(env, "STORAGE_BACKEND", "none")
+    db = getattr(env, "DB", None) or (env.get("DB") if isinstance(env, dict) else None)
+    if backend == "d1" and db:
+        storage = D1Storage(db)
+        is_new = await storage.claim_update(update_id)
+        if not is_new:
+            return Response.json({"ok": True, "duplicate": True})
+    else:
+        if update_id in recent_updates:
+            return Response.json({"ok": True, "duplicate": True})
+        recent_updates[update_id] = None
+        if len(recent_updates) > 10000:
+            recent_updates.popitem(last=False)
 
     text_msg = message["text"]
     match = re.match(r"^/([a-zA-Z]+)(?:@([a-zA-Z0-9_]+))?(?:\s|$)", text_msg)

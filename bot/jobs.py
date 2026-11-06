@@ -58,6 +58,6 @@ async def check_price_alerts_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             text = f"🔔 <b>Alert #{alert['id']}</b>\n{symbol} is {price_str} ({direction} {threshold})"
             try:
                 await context.bot.send_message(chat_id=alert["chat_id"], text=text, parse_mode="HTML")
+                alert_delete_by_id(alert["id"])
             except Exception as e:
                 logger.error(f"Failed to send alert #{alert['id']}: {e}")
-            alert_delete_by_id(alert["id"])

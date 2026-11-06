@@ -76,8 +76,8 @@ def validate_config() -> None:
         raise ValueError("STORAGE_BACKEND must be none, sqlite, or d1")
     if STORAGE_BACKEND == "none" and (WATCHLIST_ENABLED or ALERTS_ENABLED):
         raise ValueError("Enabled watchlists or alerts require persistent storage")
-    if BOT_MODE == "polling" and STORAGE_BACKEND == "d1":
-        raise ValueError("D1 is not supported in polling mode")
+    if STORAGE_BACKEND == "d1":
+        raise ValueError("D1 storage is only supported on Cloudflare Workers")
 
 
 # Parse ALLOWED_CHAT_IDS

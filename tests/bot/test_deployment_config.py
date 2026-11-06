@@ -38,6 +38,27 @@ def test_none_backend_requires_features_disabled(monkeypatch):
     config.validate_config()
 
 
+def test_d1_backend_rejected_in_python_runtime(monkeypatch):
+    monkeypatch.setattr(config, "BOT_MODE", "polling")
+    monkeypatch.setattr(config, "STORAGE_BACKEND", "d1")
+    monkeypatch.setattr(config, "WATCHLIST_ENABLED", False)
+    monkeypatch.setattr(config, "ALERTS_ENABLED", False)
+    with pytest.raises(ValueError, match="D1 storage is only supported on Cloudflare Workers"):
+        config.validate_config()
+
+
+def test_invalid_bot_mode_rejected(monkeypatch):
+    monkeypatch.setattr(config, "BOT_MODE", "invalid_mode")
+    with pytest.raises(ValueError, match="BOT_MODE must be polling or webhook"):
+        config.validate_config()
+
+
+def test_invalid_storage_backend_rejected(monkeypatch):
+    monkeypatch.setattr(config, "STORAGE_BACKEND", "redis")
+    with pytest.raises(ValueError, match="STORAGE_BACKEND must be none, sqlite, or d1"):
+        config.validate_config()
+
+
 @pytest.mark.asyncio
 async def test_polling_refuses_active_webhook():
     application = MagicMock()
