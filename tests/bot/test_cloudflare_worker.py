@@ -17,9 +17,11 @@ from cloudflare.webhook import (
     handle_request,
     market_symbol,
     quote,
+    ranges,
     recent_updates,
     reply_for,
     same_secret,
+    sanitize_url,
     timed_fetch,
     validate_webhook_config,
 )
@@ -560,3 +562,48 @@ async def test_worker_quote_parses_intraday_bars(monkeypatch):
     assert res["preMarketTime"] == 1500
     assert res["postMarketPrice"] == 107.5  # Post-market bar close
     assert res["postMarketTime"] == 3500
+
+
+def test_sanitize_url_redacts_telegram_token():
+    raw_url = "https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/sendMessage"
+    sanitized = sanitize_url(raw_url)
+    assert "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" not in sanitized
+    assert sanitized == "https://api.telegram.org/bot<redacted>/sendMessage"
+
+    yahoo_url = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL"
+    assert sanitize_url(yahoo_url) == yahoo_url
+
+
+@pytest.mark.asyncio
+async def test_worker_timed_fetch_redacts_token_on_timeout(monkeypatch):
+    import asyncio
+
+    async def hanging_fetch(_url, _opts):
+        await asyncio.sleep(1.0)
+        return None
+
+    monkeypatch.setattr("cloudflare.webhook.cf_fetch", hanging_fetch)
+    secret_url = "https://api.telegram.org/botSECRET_BOT_TOKEN_12345/sendMessage"
+    with pytest.raises(RuntimeError) as exc_info:
+        await timed_fetch(secret_url, timeout=0.01)
+
+    err_msg = str(exc_info.value)
+    assert "SECRET_BOT_TOKEN_12345" not in err_msg
+    assert "/bot<redacted>/sendMessage" in err_msg
+
+
+def test_ranges_displays_day_and_52w_without_single_day_week_range():
+    q = {
+        "meta": {
+            "currency": "USD",
+            "regularMarketDayLow": 150.0,
+            "regularMarketDayHigh": 155.0,
+            "fiftyTwoWeekLow": 120.0,
+            "fiftyTwoWeekHigh": 180.0,
+        }
+    }
+    r = ranges(q)
+    assert len(r) == 2
+    assert "Day $150.00–$155.00" in r[0]
+    assert "52W $120.00–$180.00" in r[1]
+    assert not any("Week" in item for item in r)

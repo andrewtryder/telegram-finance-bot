@@ -240,6 +240,11 @@ def parse_ids(value: Any) -> set[str]:
     return out
 
 
+def sanitize_url(url: str) -> str:
+    """Strip sensitive bot tokens from Telegram API URLs."""
+    return re.sub(r"/bot[^/]+/", "/bot<redacted>/", url)
+
+
 async def timed_fetch(url: str, options: Optional[dict] = None, timeout: float = 10.0) -> Any:
     fetcher = cf_fetch
     if fetcher is None:
@@ -248,7 +253,8 @@ async def timed_fetch(url: str, options: Optional[dict] = None, timeout: float =
     try:
         return await asyncio.wait_for(fetcher(url, opts), timeout=timeout)
     except asyncio.TimeoutError:
-        raise RuntimeError(f"HTTP fetch timed out after {timeout}s: {url}") from None
+        safe_url = sanitize_url(url)
+        raise RuntimeError(f"HTTP fetch timed out after {timeout}s: {safe_url}") from None
 
 
 async def telegram(env: Any, method: str, body: Optional[dict] = None) -> Any:
@@ -406,8 +412,6 @@ async def quote(_env: Any, symbol: str) -> dict:
     times = result.get("timestamp") or []
     closes = bars.get("close") or []
     opens = bars.get("open") or []
-    highs = bars.get("high") or []
-    lows = bars.get("low") or []
 
     previous = to_number(meta.get("chartPreviousClose") or meta.get("previousClose"))
 
@@ -450,9 +454,6 @@ async def quote(_env: Any, symbol: str) -> dict:
                     post_price = to_number(closes[idx])
                     post_time = tn
 
-    valid_lows = [to_number(x) for x in lows if to_number(x) is not None]
-    valid_highs = [to_number(x) for x in highs if to_number(x) is not None]
-
     res = {
         "symbol": symbol,
         "meta": meta,
@@ -463,8 +464,6 @@ async def quote(_env: Any, symbol: str) -> dict:
         "preMarketTime": pre_time,
         "postMarketPrice": post_price,
         "postMarketTime": post_time,
-        "weekLow": min(valid_lows) if valid_lows else None,
-        "weekHigh": max(valid_highs) if valid_highs else None,
     }
     _cache_set(QUOTE_CACHE, symbol, (time.time() + 45, res))
     return res
@@ -509,7 +508,6 @@ def ranges(q: dict, crypto: bool = False) -> list[str]:
             result.append(f"{label} {format_price(low_n, currency, crypto)}–{format_price(high_n, currency, crypto)}")
 
     add("Day", meta.get("regularMarketDayLow"), meta.get("regularMarketDayHigh"))
-    add("Week", q.get("weekLow"), q.get("weekHigh"))
     add("52W", meta.get("fiftyTwoWeekLow"), meta.get("fiftyTwoWeekHigh"))
     return result
 

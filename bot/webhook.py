@@ -19,7 +19,7 @@ def create_server(application, secret: str) -> web.Application:
         raise ValueError("A valid TELEGRAM_WEBHOOK_SECRET is required.")
     server = web.Application(client_max_size=1024 * 1024)
     seen: OrderedDict[int, None] = OrderedDict()
-    in_flight: set[int] = set()
+    in_flight: dict[int, asyncio.Event] = {}
     lock = asyncio.Lock()
 
     async def health(_request):
@@ -38,23 +38,39 @@ def create_server(application, secret: str) -> web.Application:
             raise web.HTTPBadRequest() from None
 
         async with lock:
-            if update_id in seen or update_id in in_flight:
+            if update_id in seen:
                 return web.json_response({"ok": True, "duplicate": True})
-            in_flight.add(update_id)
+            if update_id in in_flight:
+                wait_event = in_flight[update_id]
+                is_primary = False
+            else:
+                wait_event = asyncio.Event()
+                in_flight[update_id] = wait_event
+                is_primary = True
+
+        if not is_primary:
+            # A concurrent duplicate arrived while processing; wait for the primary result
+            await wait_event.wait()
+            async with lock:
+                if update_id in seen:
+                    return web.json_response({"ok": True, "duplicate": True})
+            raise web.HTTPServiceUnavailable()
 
         try:
             update = Update.de_json(payload, application.bot)
             await application.process_update(update)
         except Exception:
             async with lock:
-                in_flight.discard(update_id)
+                in_flight.pop(update_id, None)
+                wait_event.set()
             raise web.HTTPServiceUnavailable() from None
         else:
             async with lock:
-                in_flight.discard(update_id)
+                in_flight.pop(update_id, None)
                 seen[update_id] = None
                 if len(seen) > 10000:
                     seen.popitem(last=False)
+                wait_event.set()
 
         return web.json_response({"ok": True})
 

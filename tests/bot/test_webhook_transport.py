@@ -117,3 +117,64 @@ async def test_concurrent_updates_do_not_block_each_other():
         assert res2.status == 200
         # Update 2 had shorter delay, so it should finish before update 1
         assert completion_order == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicate_awaits_primary_failure():
+    # If a duplicate arrives while primary is in-flight, and primary fails,
+    # the duplicate must NOT be acknowledged with 200 (which would lose the update).
+    # Both must return 503 so Telegram retries.
+    import asyncio
+
+    async def failing_process(_update):
+        await asyncio.sleep(0.05)
+        raise RuntimeError("database/provider down")
+
+    application = MagicMock()
+    application.process_update = AsyncMock(side_effect=failing_process)
+
+    async with TestClient(TestServer(create_server(application, "secret"))) as client:
+        headers = {"X-Telegram-Bot-Api-Secret-Token": "secret"}
+        task1 = client.post("/webhook", json={"update_id": 99}, headers=headers)
+        task2 = client.post("/webhook", json={"update_id": 99}, headers=headers)
+
+        res1, res2 = await asyncio.gather(task1, task2)
+        assert res1.status == 503
+        assert res2.status == 503
+
+        # Subsequent retry succeeds
+        application.process_update = AsyncMock(return_value=None)
+        res_retry = await client.post("/webhook", json={"update_id": 99}, headers=headers)
+        assert res_retry.status == 200
+
+        # Now that it succeeded, subsequent duplicate returns 200 duplicate
+        res_dup = await client.post("/webhook", json={"update_id": 99}, headers=headers)
+        assert res_dup.status == 200
+        assert (await res_dup.json())["duplicate"] is True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicate_awaits_primary_success():
+    # If a duplicate arrives while primary is in-flight, and primary succeeds,
+    # the duplicate waits and safely returns 200 duplicate.
+    import asyncio
+
+    async def slow_success(_update):
+        await asyncio.sleep(0.05)
+        return None
+
+    application = MagicMock()
+    application.process_update = AsyncMock(side_effect=slow_success)
+
+    async with TestClient(TestServer(create_server(application, "secret"))) as client:
+        headers = {"X-Telegram-Bot-Api-Secret-Token": "secret"}
+        task1 = client.post("/webhook", json={"update_id": 101}, headers=headers)
+        task2 = client.post("/webhook", json={"update_id": 101}, headers=headers)
+
+        res1, res2 = await asyncio.gather(task1, task2)
+        assert res1.status == 200
+        assert res2.status == 200
+        # Exactly one is duplicate
+        data1 = await res1.json()
+        data2 = await res2.json()
+        assert (data1.get("duplicate") is True) != (data2.get("duplicate") is True)
