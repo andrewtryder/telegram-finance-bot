@@ -1,20 +1,26 @@
 """Unit tests for the stateless Python Cloudflare Worker."""
 
+import datetime
 import json
+import zoneinfo
 from unittest.mock import AsyncMock
 
 import pytest
 
 from cloudflare.webhook import (
+    _cache_get,
+    _cache_set,
     compact_number,
     format_number,
     format_price,
     format_quote,
     handle_request,
     market_symbol,
+    quote,
     recent_updates,
     reply_for,
     same_secret,
+    timed_fetch,
     validate_webhook_config,
 )
 
@@ -94,6 +100,10 @@ def test_validate_webhook_config():
 
 
 def test_format_quote_pre_market():
+    tz = zoneinfo.ZoneInfo("America/New_York")
+    ref_now = datetime.datetime(2026, 11, 10, 8, 30, tzinfo=tz)
+    pre_time = int(datetime.datetime(2026, 11, 10, 8, 15, tzinfo=tz).timestamp())
+    reg_time = int(datetime.datetime(2026, 11, 9, 16, 0, tzinfo=tz).timestamp())
     q = {
         "symbol": "AAPL",
         "price": 250.0,
@@ -106,11 +116,11 @@ def test_format_quote_pre_market():
             "preMarketPrice": 252.15,
             "preMarketChange": 3.65,
             "preMarketChangePercent": 1.47,
-            "regularMarketTime": 1700000000,
-            "preMarketTime": 1700001000,
+            "regularMarketTime": reg_time,
+            "preMarketTime": pre_time,
         },
     }
-    text = format_quote(q, crypto=False)
+    text = format_quote(q, crypto=False, now_dt=ref_now)
     assert "Apple Inc. (AAPL)" in text
     assert "Regular Price:</b> $250.00" in text
     assert "Previous Close:</b> $248.50" in text
@@ -118,9 +128,14 @@ def test_format_quote_pre_market():
     assert "+$3.65" in text
     assert "(+1.47%)" in text
     assert "Session:</b> Pre-market" in text
+    assert "Nov 10, 8:15 AM ET" in text
 
 
 def test_format_quote_after_hours():
+    tz = zoneinfo.ZoneInfo("America/New_York")
+    ref_now = datetime.datetime(2026, 11, 10, 17, 30, tzinfo=tz)
+    reg_time = int(datetime.datetime(2026, 11, 10, 16, 0, tzinfo=tz).timestamp())
+    post_time = int(datetime.datetime(2026, 11, 10, 17, 15, tzinfo=tz).timestamp())
     q = {
         "symbol": "AAPL",
         "price": 250.0,
@@ -133,17 +148,18 @@ def test_format_quote_after_hours():
             "postMarketPrice": 251.25,
             "postMarketChange": 1.25,
             "postMarketChangePercent": 0.50,
-            "regularMarketTime": 1700000000,
-            "postMarketTime": 1700003000,
+            "regularMarketTime": reg_time,
+            "postMarketTime": post_time,
         },
     }
-    text = format_quote(q, crypto=False)
+    text = format_quote(q, crypto=False, now_dt=ref_now)
     assert "Apple Inc. (AAPL)" in text
     assert "Regular Close:</b> $250.00" in text
     assert "🌙 <b>After-Hours:</b> $251.25" in text
     assert "+$1.25" in text
     assert "(+0.50%)" in text
     assert "Session:</b> After-hours" in text
+    assert "Nov 10, 5:15 PM ET" in text
 
 
 def test_format_quote_crypto():
@@ -415,3 +431,132 @@ async def test_cloudflare_all_core_commands(monkeypatch):
     res_admin = await reply_for("admin", ["stats"], dummy_msg, env)
     assert "Admin Stats" in res_admin
     assert "Cloudflare Python Worker" in res_admin
+
+
+def test_worker_pre_market_missing_timestamp_rejected():
+    tz = zoneinfo.ZoneInfo("America/New_York")
+    ref_now = datetime.datetime(2026, 11, 10, 8, 30, tzinfo=tz)
+    q = {
+        "symbol": "AAPL",
+        "price": 250.0,
+        "previous": 248.5,
+        "meta": {
+            "currency": "USD",
+            "shortName": "Apple Inc.",
+            "marketState": "PRE",
+            "preMarketPrice": 252.15,
+            "preMarketTime": None,  # Missing timestamp
+        },
+    }
+    text = format_quote(q, crypto=False, now_dt=ref_now)
+    assert "Session:</b> Closed" in text
+    assert "🌅 <b>Pre-Market:</b>" not in text
+
+
+def test_worker_pre_market_friday_timestamp_on_monday_rejected():
+    tz = zoneinfo.ZoneInfo("America/New_York")
+    monday = datetime.datetime(2026, 11, 9, 8, 30, tzinfo=tz)
+    friday_pre_time = int(datetime.datetime(2026, 11, 6, 8, 15, tzinfo=tz).timestamp())
+    friday_reg_time = int(datetime.datetime(2026, 11, 6, 16, 0, tzinfo=tz).timestamp())
+
+    q = {
+        "symbol": "AAPL",
+        "price": 250.0,
+        "previous": 248.5,
+        "meta": {
+            "currency": "USD",
+            "shortName": "Apple Inc.",
+            "marketState": "PRE",
+            "preMarketPrice": 252.15,
+            "regularMarketTime": friday_reg_time,
+            "preMarketTime": friday_pre_time,  # Old Friday pre-market trade
+        },
+    }
+    text = format_quote(q, crypto=False, now_dt=monday)
+    assert "Session:</b> Closed" in text
+    assert "🌅 <b>Pre-Market:</b>" not in text
+
+
+def test_worker_bounded_cache_eviction():
+    import time
+    from collections import OrderedDict
+
+    cache = OrderedDict()
+    # Insert 3 entries with max_size=2
+    _cache_set(cache, "k1", (time.time() + 100, {"v": 1}), max_size=2)
+    _cache_set(cache, "k2", (time.time() + 100, {"v": 2}), max_size=2)
+    assert len(cache) == 2
+    assert _cache_get(cache, "k1") == {"v": 1}
+
+    # k1 accessed, so k2 is now oldest. Adding k3 should evict k2.
+    _cache_set(cache, "k3", (time.time() + 100, {"v": 3}), max_size=2)
+    assert len(cache) == 2
+    assert "k2" not in cache
+    assert _cache_get(cache, "k1") == {"v": 1}
+    assert _cache_get(cache, "k3") == {"v": 3}
+
+
+@pytest.mark.asyncio
+async def test_worker_timed_fetch_timeout(monkeypatch):
+    import asyncio
+
+    async def hanging_fetch(_url, _opts):
+        await asyncio.sleep(1.0)
+        return None
+
+    monkeypatch.setattr("cloudflare.webhook.cf_fetch", hanging_fetch)
+    with pytest.raises(RuntimeError, match="HTTP fetch timed out"):
+        await timed_fetch("https://example.com", timeout=0.01)
+
+
+@pytest.mark.asyncio
+async def test_worker_quote_parses_intraday_bars(monkeypatch):
+    # Verify that quote parses intraday 5m bars to extract pre/post market trade prices and open
+    chart_payload = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "currency": "USD",
+                        "symbol": "TEST",
+                        "regularMarketPrice": 105.0,
+                        "chartPreviousClose": 100.0,
+                        "currentTradingPeriod": {
+                            "pre": {"start": 1000, "end": 2000},
+                            "regular": {"start": 2000, "end": 3000},
+                            "post": {"start": 3000, "end": 4000},
+                        },
+                    },
+                    "timestamp": [1500, 2100, 3500],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": [101.0, 103.0, 106.0],
+                                "close": [102.5, 105.0, 107.5],
+                                "high": [103.0, 106.0, 108.0],
+                                "low": [100.0, 102.0, 105.0],
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+    async def mock_data_request(_path, _params, ttl=45):
+        return chart_payload
+
+    monkeypatch.setattr("cloudflare.webhook.data_request", mock_data_request)
+    # Clear QUOTE_CACHE
+    from cloudflare.webhook import QUOTE_CACHE
+
+    QUOTE_CACHE.clear()
+
+    res = await quote({}, "TEST")
+    assert res["price"] == 105.0
+    assert res["previous"] == 100.0
+    assert res["open"] == 103.0  # Regular session open
+    assert res["preMarketPrice"] == 102.5  # Pre-market bar close
+    assert res["preMarketTime"] == 1500
+    assert res["postMarketPrice"] == 107.5  # Post-market bar close
+    assert res["postMarketTime"] == 3500

@@ -65,3 +65,10 @@ async def test_python_webhook_secret_verification():
         )
         assert resp_ok.status == 200
         assert await resp_ok.json() == {"ok": True}
+
+
+def test_drop_pending_updates_default_is_false():
+    from bot import config
+
+    # By default, pending updates should not be dropped
+    assert config.DROP_PENDING_UPDATES is False

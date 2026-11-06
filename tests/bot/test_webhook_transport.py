@@ -87,3 +87,33 @@ async def test_start_routes_through_existing_handlers(monkeypatch):
             assert "Financial Market Bot" in stub.messages[0]
     finally:
         await application.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_updates_do_not_block_each_other():
+    # Verify that slow updates do not hold a global lock preventing other updates from proceeding
+    import asyncio
+
+    completion_order = []
+
+    async def slow_process(update):
+        if update.update_id == 1:
+            await asyncio.sleep(0.12)
+            completion_order.append(1)
+        elif update.update_id == 2:
+            await asyncio.sleep(0.02)
+            completion_order.append(2)
+
+    application = MagicMock()
+    application.process_update = AsyncMock(side_effect=slow_process)
+
+    async with TestClient(TestServer(create_server(application, "secret"))) as client:
+        headers = {"X-Telegram-Bot-Api-Secret-Token": "secret"}
+        task1 = client.post("/webhook", json={"update_id": 1}, headers=headers)
+        task2 = client.post("/webhook", json={"update_id": 2}, headers=headers)
+
+        res1, res2 = await asyncio.gather(task1, task2)
+        assert res1.status == 200
+        assert res2.status == 200
+        # Update 2 had shorter delay, so it should finish before update 1
+        assert completion_order == [2, 1]

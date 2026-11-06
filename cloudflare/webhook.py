@@ -67,12 +67,31 @@ metrics = {
     "provider_errors": 0,
 }
 recent_updates: OrderedDict[int, None] = OrderedDict()
-QUOTE_CACHE: dict[str, tuple[float, dict]] = {}
-DATA_CACHE: dict[str, tuple[float, dict]] = {}
+MAX_CACHE_SIZE = 100
+QUOTE_CACHE: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+DATA_CACHE: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+
+
+def _cache_set(cache: OrderedDict, key: Any, value: tuple[float, Any], max_size: int = MAX_CACHE_SIZE) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    if len(cache) > max_size:
+        cache.popitem(last=False)
+
+
+def _cache_get(cache: OrderedDict, key: Any) -> Optional[Any]:
+    if key not in cache:
+        return None
+    expire_at, data = cache[key]
+    if time.time() > expire_at:
+        del cache[key]
+        return None
+    cache.move_to_end(key)
+    return data
 
 
 def format_et_time(epoch_seconds: int | float | None) -> str:
-    """Format Unix epoch timestamp into US Eastern Time (e.g. 8:42 AM ET)."""
+    """Format Unix epoch timestamp into US Eastern Time with calendar date (e.g. Nov 6, 8:42 AM ET)."""
     if not epoch_seconds:
         return ""
     try:
@@ -80,9 +99,125 @@ def format_et_time(epoch_seconds: int | float | None) -> str:
         hour = dt.hour % 12 or 12
         minute = f"{dt.minute:02d}"
         ampm = "AM" if dt.hour < 12 else "PM"
-        return f"{hour}:{minute} {ampm} ET"
+        return f"{dt.strftime('%b')} {dt.day}, {hour}:{minute} {ampm} ET"
     except Exception:
         return ""
+
+
+def is_pre_market_fresh(
+    pre_price: Optional[float],
+    pre_time: Optional[float],
+    reg_time: Optional[float] = None,
+    now_dt: Optional[datetime.datetime] = None,
+) -> bool:
+    """Validate that pre-market quote is fresh and belongs to today's active session.
+
+    Rejects missing pre_time, trades from prior days (e.g. Friday pre-market on Monday morning),
+    trades outside the 04:00-09:30 ET window, and quotes after regular market traded today.
+    """
+    if pre_price is None or pre_price <= 0:
+        return False
+    if pre_time is None or pre_time <= 0:
+        return False
+    try:
+        if now_dt is None:
+            now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(EASTERN_TZ)
+        elif now_dt.tzinfo is None:
+            now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+        else:
+            now_et = now_dt.astimezone(EASTERN_TZ)
+
+        if now_et.weekday() >= 5:
+            return False
+
+        pre_dt = datetime.datetime.fromtimestamp(pre_time, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+        if pre_dt.date() != now_et.date():
+            return False
+
+        pre_tod = (pre_dt.hour, pre_dt.minute)
+        if not ((4, 0) <= pre_tod < (9, 30)):
+            return False
+
+        if pre_dt > now_et + datetime.timedelta(minutes=5):
+            return False
+
+        if reg_time and reg_time > 0:
+            reg_dt = datetime.datetime.fromtimestamp(reg_time, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+            if reg_dt.date() == now_et.date() and (reg_dt.hour, reg_dt.minute) >= (9, 30):
+                return False
+
+        return True
+    except Exception:
+        return False
+
+
+def is_post_market_fresh(
+    post_price: Optional[float],
+    post_time: Optional[float],
+    reg_time: Optional[float] = None,
+    now_dt: Optional[datetime.datetime] = None,
+) -> bool:
+    """Validate that after-hours quote is fresh and belongs to today's active session.
+
+    Rejects missing post_time, trades from prior days, trades outside the 16:00-20:00 ET window,
+    and trades older than regular market close.
+    """
+    if post_price is None or post_price <= 0:
+        return False
+    if post_time is None or post_time <= 0:
+        return False
+    try:
+        if now_dt is None:
+            now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(EASTERN_TZ)
+        elif now_dt.tzinfo is None:
+            now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+        else:
+            now_et = now_dt.astimezone(EASTERN_TZ)
+
+        if now_et.weekday() >= 5:
+            return False
+
+        post_dt = datetime.datetime.fromtimestamp(post_time, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+        if post_dt.date() != now_et.date():
+            return False
+
+        post_tod = (post_dt.hour, post_dt.minute)
+        if not ((16, 0) <= post_tod <= (20, 5)):
+            return False
+
+        if post_dt > now_et + datetime.timedelta(minutes=5):
+            return False
+
+        if reg_time and reg_time > 0 and post_time < reg_time:
+            return False
+
+        return True
+    except Exception:
+        return False
+
+
+def is_post_market_closed_valid(
+    post_price: Optional[float],
+    post_time: Optional[float],
+    reg_time: Optional[float] = None,
+) -> bool:
+    """Validate that after-hours quote from the latest session is valid to display during closed session."""
+    if post_price is None or post_price <= 0:
+        return False
+    if post_time is None or post_time <= 0:
+        return False
+    try:
+        post_dt = datetime.datetime.fromtimestamp(post_time, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+        post_tod = (post_dt.hour, post_dt.minute)
+        if not ((16, 0) <= post_tod <= (20, 15)):
+            return False
+        if reg_time and reg_time > 0:
+            reg_dt = datetime.datetime.fromtimestamp(reg_time, tz=datetime.timezone.utc).astimezone(EASTERN_TZ)
+            if post_dt.date() != reg_dt.date() or post_time < reg_time:
+                return False
+        return True
+    except Exception:
+        return False
 
 
 def _get_env_val(env: Any, key: str, default: str = "") -> str:
@@ -105,12 +240,15 @@ def parse_ids(value: Any) -> set[str]:
     return out
 
 
-async def timed_fetch(url: str, options: Optional[dict] = None) -> Any:
+async def timed_fetch(url: str, options: Optional[dict] = None, timeout: float = 10.0) -> Any:
     fetcher = cf_fetch
     if fetcher is None:
         raise RuntimeError("No HTTP fetcher available in this runtime")
     opts = options or {}
-    return await fetcher(url, opts)
+    try:
+        return await asyncio.wait_for(fetcher(url, opts), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"HTTP fetch timed out after {timeout}s: {url}") from None
 
 
 async def telegram(env: Any, method: str, body: Optional[dict] = None) -> Any:
@@ -167,11 +305,9 @@ async def send_photo(env: Any, chat_id: int, photo: bytes, caption: str) -> None
 async def data_request(path: str, params: dict, ttl: int = 45) -> dict:
     query = urllib.parse.urlencode(params)
     cache_key = f"{path}?{query}"
-    now = time.time()
-    if cache_key in DATA_CACHE:
-        expire_at, cached_data = DATA_CACHE[cache_key]
-        if now < expire_at:
-            return cached_data
+    cached = _cache_get(DATA_CACHE, cache_key)
+    if cached is not None:
+        return cached
 
     url = f"https://query1.finance.yahoo.com/{path}?{query}"
     response = await timed_fetch(url, {"headers": {"User-Agent": "Mozilla/5.0"}})
@@ -179,7 +315,7 @@ async def data_request(path: str, params: dict, ttl: int = 45) -> dict:
         raise RuntimeError("Market data provider request failed")
     text = await response.text()
     data = json.loads(text)
-    DATA_CACHE[cache_key] = (now + ttl, data)
+    _cache_set(DATA_CACHE, cache_key, (time.time() + ttl, data))
     return data
 
 
@@ -247,15 +383,13 @@ def market_symbol(raw: Any, crypto: bool = False, infer_crypto: bool = False) ->
 
 
 async def quote(_env: Any, symbol: str) -> dict:
-    now = time.time()
-    if symbol in QUOTE_CACHE:
-        expire_at, cached_q = QUOTE_CACHE[symbol]
-        if now < expire_at:
-            return cached_q
+    cached = _cache_get(QUOTE_CACHE, symbol)
+    if cached is not None:
+        return cached
 
     data = await data_request(
         f"v8/finance/chart/{urllib.parse.quote(symbol)}",
-        {"range": "5d", "interval": "1d", "includePrePost": "true"},
+        {"range": "1d", "interval": "5m", "includePrePost": "true"},
         ttl=45,
     )
     result_list = data.get("chart", {}).get("result") or []
@@ -271,34 +405,53 @@ async def quote(_env: Any, symbol: str) -> dict:
     bars = quotes[0] if quotes else {}
     times = result.get("timestamp") or []
     closes = bars.get("close") or []
-
-    current_index = -1
-    regular_time = to_number(meta.get("regularMarketTime"))
-    if regular_time is not None and times:
-        try:
-            cur_dt = datetime.datetime.fromtimestamp(regular_time, datetime.timezone.utc).strftime("%Y-%m-%d")
-            for i in range(len(times) - 1, -1, -1):
-                t = to_number(times[i])
-                if t is not None:
-                    d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%d")
-                    if d == cur_dt:
-                        current_index = i
-                        break
-        except Exception:
-            pass
+    opens = bars.get("open") or []
+    highs = bars.get("high") or []
+    lows = bars.get("low") or []
 
     previous = to_number(meta.get("chartPreviousClose") or meta.get("previousClose"))
-    if previous is None and current_index >= 0:
-        for i in range(current_index - 1, -1, -1):
-            if i < len(closes) and to_number(closes[i]) is not None:
-                previous = to_number(closes[i])
-                break
 
-    lows = [to_number(x) for x in (bars.get("low") or []) if to_number(x) is not None]
-    highs = [to_number(x) for x in (bars.get("high") or []) if to_number(x) is not None]
+    # Extract trading period boundaries if provided
+    period = meta.get("currentTradingPeriod") or {}
+    pre_period = period.get("pre") or {}
+    reg_period = period.get("regular") or {}
+    post_period = period.get("post") or {}
 
-    opens = bars.get("open") or []
-    open_val = to_number(opens[current_index]) if current_index >= 0 and current_index < len(opens) else None
+    pre_start = to_number(pre_period.get("start"))
+    pre_end = to_number(pre_period.get("end"))
+    reg_start = to_number(reg_period.get("start"))
+    post_start = to_number(post_period.get("start"))
+    post_end = to_number(post_period.get("end"))
+
+    # Default to meta pre/post values if provided
+    pre_price = to_number(meta.get("preMarketPrice"))
+    pre_time = to_number(meta.get("preMarketTime"))
+    post_price = to_number(meta.get("postMarketPrice"))
+    post_time = to_number(meta.get("postMarketTime"))
+
+    open_val = None
+    if times:
+        for idx, t in enumerate(times):
+            tn = to_number(t)
+            if tn is None:
+                continue
+            # First regular session open
+            if open_val is None and reg_start is not None and tn >= reg_start:
+                if idx < len(opens) and to_number(opens[idx]) is not None:
+                    open_val = to_number(opens[idx])
+            # Pre-market trade bars
+            if pre_start is not None and pre_end is not None and pre_start <= tn < pre_end:
+                if idx < len(closes) and to_number(closes[idx]) is not None:
+                    pre_price = to_number(closes[idx])
+                    pre_time = tn
+            # Post-market trade bars
+            elif post_start is not None and post_end is not None and post_start <= tn <= post_end:
+                if idx < len(closes) and to_number(closes[idx]) is not None:
+                    post_price = to_number(closes[idx])
+                    post_time = tn
+
+    valid_lows = [to_number(x) for x in lows if to_number(x) is not None]
+    valid_highs = [to_number(x) for x in highs if to_number(x) is not None]
 
     res = {
         "symbol": symbol,
@@ -306,10 +459,14 @@ async def quote(_env: Any, symbol: str) -> dict:
         "price": price,
         "previous": previous,
         "open": open_val,
-        "weekLow": min(lows) if lows else None,
-        "weekHigh": max(highs) if highs else None,
+        "preMarketPrice": pre_price,
+        "preMarketTime": pre_time,
+        "postMarketPrice": post_price,
+        "postMarketTime": post_time,
+        "weekLow": min(valid_lows) if valid_lows else None,
+        "weekHigh": max(valid_highs) if valid_highs else None,
     }
-    QUOTE_CACHE[symbol] = (now + 45, res)
+    _cache_set(QUOTE_CACHE, symbol, (time.time() + 45, res))
     return res
 
 
@@ -367,7 +524,7 @@ def compact_number(value: Any) -> Optional[str]:
     return f"{n:,.2f}"
 
 
-def format_quote(q: dict, crypto: bool = False) -> str:
+def format_quote(q: dict, crypto: bool = False, now_dt: Optional[datetime.datetime] = None) -> str:
     """Format full stock or crypto quote with extended-hours pricing."""
     meta = q.get("meta") or {}
     name = meta.get("shortName") or meta.get("longName") or q["symbol"]
@@ -393,9 +550,15 @@ def format_quote(q: dict, crypto: bool = False) -> str:
             lines.append("<b>Session:</b> Regular cash index")
     else:
         # Equities: evaluate trading session & extended hours
+        if now_dt is None:
+            now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(EASTERN_TZ)
+        elif now_dt.tzinfo is None:
+            now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+        else:
+            now_et = now_dt.astimezone(EASTERN_TZ)
+
         state = str(meta.get("marketState") or "").upper()
         if not state:
-            now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(EASTERN_TZ)
             weekday = now_et.weekday()
             if weekday >= 5:
                 state = "CLOSED"
@@ -410,18 +573,19 @@ def format_quote(q: dict, crypto: bool = False) -> str:
             else:
                 state = "CLOSED"
 
-        pre_price = to_number(raw_val(meta.get("preMarketPrice") or comp_price.get("preMarketPrice")))
-        post_price = to_number(raw_val(meta.get("postMarketPrice") or comp_price.get("postMarketPrice")))
+        pre_price = to_number(
+            raw_val(q.get("preMarketPrice") or meta.get("preMarketPrice") or comp_price.get("preMarketPrice"))
+        )
+        post_price = to_number(
+            raw_val(q.get("postMarketPrice") or meta.get("postMarketPrice") or comp_price.get("postMarketPrice"))
+        )
         reg_time = to_number(meta.get("regularMarketTime"))
-        pre_time = to_number(meta.get("preMarketTime"))
-        post_time = to_number(meta.get("postMarketTime"))
+        pre_time = to_number(q.get("preMarketTime") or meta.get("preMarketTime"))
+        post_time = to_number(q.get("postMarketTime") or meta.get("postMarketTime"))
 
-        pre_valid = (
-            pre_price is not None and pre_price > 0 and (not reg_time or not pre_time or pre_time >= reg_time - 86400)
-        )
-        post_valid = (
-            post_price is not None and post_price > 0 and (not reg_time or not post_time or post_time >= reg_time)
-        )
+        pre_valid = is_pre_market_fresh(pre_price, pre_time, reg_time, now_dt=now_et)
+        post_valid = is_post_market_fresh(post_price, post_time, reg_time, now_dt=now_et)
+        closed_post_valid = is_post_market_closed_valid(post_price, post_time, reg_time)
 
         if state in ("PRE", "PREPRE") and pre_valid:
             ref_close = prev_close or price
@@ -437,7 +601,7 @@ def format_quote(q: dict, crypto: bool = False) -> str:
 
             sign = "+" if pre_change >= 0 else "-"
             arrow = "🔺" if pre_change > 0 else "🔻" if pre_change < 0 else "▪️"
-            as_of = format_et_time(pre_time or reg_time)
+            as_of = format_et_time(pre_time)
 
             lines.append(f"<b>Regular Price:</b> {p_str}")
             if prev_close:
@@ -467,7 +631,7 @@ def format_quote(q: dict, crypto: bool = False) -> str:
 
             sign = "+" if post_change >= 0 else "-"
             arrow = "🔺" if post_change > 0 else "🔻" if post_change < 0 else "▪️"
-            as_of = format_et_time(post_time or reg_time)
+            as_of = format_et_time(post_time)
 
             lines.append(f"<b>Regular Close:</b> {p_str}")
             lines.append("")
@@ -492,7 +656,7 @@ def format_quote(q: dict, crypto: bool = False) -> str:
 
         else:
             lines.append(f"<b>Regular Close:</b> {p_str}{f'  <b>Today:</b> {change}' if change else ''}")
-            if post_valid:
+            if closed_post_valid:
                 post_change = to_number(raw_val(meta.get("postMarketChange") or comp_price.get("postMarketChange")))
                 if post_change is None and price:
                     post_change = post_price - price
@@ -808,17 +972,7 @@ async def reply_for(command: str, args: list[str], message: dict, env: Any) -> A
         if not sym:
             return f"Usage: <code>/{command} &lt;symbol&gt;</code>"
 
-        async def get_summary():
-            if command == "stock":
-                try:
-                    return await company_summary(sym)
-                except Exception:
-                    return None
-            return None
-
-        q_res, comp = await asyncio.gather(quote(env, sym), get_summary())
-        if comp:
-            q_res["company"] = comp
+        q_res = await quote(env, sym)
         return format_quote(q_res, command == "crypto")
 
     return None

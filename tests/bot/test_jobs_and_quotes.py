@@ -1,11 +1,18 @@
 """Tests for quote formatting, extended hours (pre/post-market), and session labeling."""
 
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from bot.metrics import record_provider_error, reset, snapshot
-from bot.services import _format_price, format_compact_quote, format_et_time, get_quote_formatted
+from bot.services import (
+    EASTERN_TZ,
+    _format_price,
+    format_compact_quote,
+    format_et_time,
+    get_quote_formatted,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +74,9 @@ def test_format_compact_quote_missing_prev_close():
 
 @pytest.mark.asyncio
 async def test_get_quote_formatted_pre_market():
+    ref_now = datetime(2026, 11, 10, 8, 30, tzinfo=EASTERN_TZ)
+    pre_time = int(datetime(2026, 11, 10, 8, 15, tzinfo=EASTERN_TZ).timestamp())
+    reg_time = int(datetime(2026, 11, 9, 16, 0, tzinfo=EASTERN_TZ).timestamp())
     mock_data = {
         "shortName": "Apple Inc.",
         "regularMarketPrice": 250.0,
@@ -75,12 +85,12 @@ async def test_get_quote_formatted_pre_market():
         "preMarketPrice": 252.15,
         "preMarketChange": 3.65,
         "preMarketChangePercent": 1.47,
-        "regularMarketTime": 1700000000,
-        "preMarketTime": 1700001000,
+        "regularMarketTime": reg_time,
+        "preMarketTime": pre_time,
     }
     with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
         mock_info.return_value = mock_data
-        result = await get_quote_formatted("AAPL")
+        result = await get_quote_formatted("AAPL", now_dt=ref_now)
 
     assert "Apple Inc. (AAPL)" in result
     assert "Regular Price:</b> $250.00" in result
@@ -89,10 +99,14 @@ async def test_get_quote_formatted_pre_market():
     assert "+3.65" in result
     assert "(+1.47%)" in result
     assert "Session:</b> Pre-market" in result
+    assert "Nov 10, 8:15 AM ET" in result
 
 
 @pytest.mark.asyncio
 async def test_get_quote_formatted_after_hours():
+    ref_now = datetime(2026, 11, 10, 17, 30, tzinfo=EASTERN_TZ)
+    reg_time = int(datetime(2026, 11, 10, 16, 0, tzinfo=EASTERN_TZ).timestamp())
+    post_time = int(datetime(2026, 11, 10, 17, 15, tzinfo=EASTERN_TZ).timestamp())
     mock_data = {
         "shortName": "Apple Inc.",
         "regularMarketPrice": 250.0,
@@ -101,12 +115,12 @@ async def test_get_quote_formatted_after_hours():
         "postMarketPrice": 251.25,
         "postMarketChange": 1.25,
         "postMarketChangePercent": 0.50,
-        "regularMarketTime": 1700000000,
-        "postMarketTime": 1700003000,
+        "regularMarketTime": reg_time,
+        "postMarketTime": post_time,
     }
     with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
         mock_info.return_value = mock_data
-        result = await get_quote_formatted("AAPL")
+        result = await get_quote_formatted("AAPL", now_dt=ref_now)
 
     assert "Apple Inc. (AAPL)" in result
     assert "Regular Close:</b> $250.00" in result
@@ -114,6 +128,7 @@ async def test_get_quote_formatted_after_hours():
     assert "+1.25" in result
     assert "(+0.50%)" in result
     assert "Session:</b> After-hours" in result
+    assert "Nov 10, 5:15 PM ET" in result
 
 
 @pytest.mark.asyncio
@@ -242,14 +257,105 @@ async def test_get_quote_formatted_closed_market_with_post_trade():
 def test_format_et_time_daylight_saving():
     # Summer (July 1, 2024 16:00 UTC -> 12:00 PM EDT)
     summer_epoch = 1719849600
-    assert format_et_time(summer_epoch) == "12:00 PM ET"
+    assert format_et_time(summer_epoch) == "Jul 1, 12:00 PM ET"
 
     # Winter (Jan 1, 2024 17:00 UTC -> 12:00 PM EST)
     winter_epoch = 1704128400
-    assert format_et_time(winter_epoch) == "12:00 PM ET"
+    assert format_et_time(winter_epoch) == "Jan 1, 12:00 PM ET"
 
 
 def test_metrics_provider_error():
     record_provider_error("yahoo")
     snap = snapshot()
     assert snap["provider_errors"]["yahoo"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pre_market_missing_timestamp_rejected():
+    # If preMarketTime is missing/None, pre-market quote must be rejected as stale/unverified
+    ref_now = datetime(2026, 11, 10, 8, 30, tzinfo=EASTERN_TZ)
+    mock_data = {
+        "shortName": "Apple Inc.",
+        "regularMarketPrice": 250.0,
+        "previousClose": 248.5,
+        "marketState": "PRE",
+        "preMarketPrice": 252.15,
+        "preMarketChange": 3.65,
+        "preMarketChangePercent": 1.47,
+        "regularMarketTime": int(datetime(2026, 11, 9, 16, 0, tzinfo=EASTERN_TZ).timestamp()),
+        "preMarketTime": None,  # Missing timestamp
+    }
+    with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = mock_data
+        result = await get_quote_formatted("AAPL", now_dt=ref_now)
+
+    assert "Session:</b> Closed" in result
+    assert "🌅 <b>Pre-Market:</b>" not in result
+
+
+@pytest.mark.asyncio
+async def test_pre_market_friday_timestamp_on_monday_rejected():
+    # On Monday morning, a Friday pre-market trade timestamp must be rejected
+    monday_morning = datetime(2026, 11, 9, 8, 30, tzinfo=EASTERN_TZ)  # Monday Nov 9
+    friday_pre_time = int(datetime(2026, 11, 6, 8, 15, tzinfo=EASTERN_TZ).timestamp())  # Friday Nov 6
+    friday_reg_time = int(datetime(2026, 11, 6, 16, 0, tzinfo=EASTERN_TZ).timestamp())
+
+    mock_data = {
+        "shortName": "Apple Inc.",
+        "regularMarketPrice": 250.0,
+        "previousClose": 248.5,
+        "marketState": "PRE",  # Provider still reports PRE
+        "preMarketPrice": 252.15,
+        "preMarketChange": 3.65,
+        "preMarketChangePercent": 1.47,
+        "regularMarketTime": friday_reg_time,
+        "preMarketTime": friday_pre_time,  # Old Friday pre-market trade
+    }
+    with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = mock_data
+        result = await get_quote_formatted("AAPL", now_dt=monday_morning)
+
+    assert "Session:</b> Closed" in result
+    assert "🌅 <b>Pre-Market:</b>" not in result
+
+
+@pytest.mark.asyncio
+async def test_pre_market_weekend_rejected():
+    # On Saturday, active pre-market must not be shown even if marketState says PRE
+    saturday = datetime(2026, 11, 7, 8, 30, tzinfo=EASTERN_TZ)
+    pre_time = int(datetime(2026, 11, 7, 8, 15, tzinfo=EASTERN_TZ).timestamp())
+    mock_data = {
+        "shortName": "Apple Inc.",
+        "regularMarketPrice": 250.0,
+        "previousClose": 248.5,
+        "marketState": "PRE",
+        "preMarketPrice": 252.15,
+        "preMarketTime": pre_time,
+    }
+    with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = mock_data
+        result = await get_quote_formatted("AAPL", now_dt=saturday)
+
+    assert "Session:</b> Closed" in result
+    assert "🌅 <b>Pre-Market:</b>" not in result
+
+
+@pytest.mark.asyncio
+async def test_post_market_missing_timestamp_rejected():
+    # If postMarketTime is missing/None, after-hours quote must not be shown as active
+    ref_now = datetime(2026, 11, 10, 17, 30, tzinfo=EASTERN_TZ)
+    mock_data = {
+        "shortName": "Apple Inc.",
+        "regularMarketPrice": 250.0,
+        "previousClose": 248.5,
+        "marketState": "POST",
+        "postMarketPrice": 251.25,
+        "regularMarketTime": int(datetime(2026, 11, 10, 16, 0, tzinfo=EASTERN_TZ).timestamp()),
+        "postMarketTime": None,
+    }
+    with patch("bot.services._get_yfinance_info", new_callable=AsyncMock) as mock_info:
+        mock_info.return_value = mock_data
+        result = await get_quote_formatted("AAPL", now_dt=ref_now)
+
+    assert "Session:</b> Closed" in result
+    assert "🌙 <b>After-Hours:</b>" not in result

@@ -26,6 +26,7 @@ from bot.commands import (
 )
 from bot.config import (
     BOT_MODE,
+    DROP_PENDING_UPDATES,
     TELEGRAM_BOT_TOKEN,
     init_honeybadger,
     is_network_timeout,
@@ -133,8 +134,8 @@ def main():
     )
     register_handlers(application)
 
-    logger.info("Starting bot... Waiting for commands.")
-    application.run_polling(drop_pending_updates=True)
+    logger.info(f"Starting bot (drop_pending_updates={DROP_PENDING_UPDATES})... Waiting for commands.")
+    application.run_polling(drop_pending_updates=DROP_PENDING_UPDATES)
 
 
 if __name__ == "__main__":

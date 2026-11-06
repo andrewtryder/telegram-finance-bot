@@ -2,7 +2,7 @@ import asyncio
 import html
 import math
 import zoneinfo
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import yfinance as yf
 from cachetools import TTLCache
@@ -22,7 +22,7 @@ SEARCH_CACHE = TTLCache(maxsize=200, ttl=300)
 
 
 def format_et_time(epoch_seconds: int | float | None) -> str:
-    """Format Unix epoch timestamp into US Eastern Time (e.g. 8:42 AM ET)."""
+    """Format Unix epoch timestamp into US Eastern Time with calendar date (e.g. Nov 6, 8:42 AM ET)."""
     if not epoch_seconds:
         return ""
     try:
@@ -30,9 +30,125 @@ def format_et_time(epoch_seconds: int | float | None) -> str:
         hour = dt.hour % 12 or 12
         minute = f"{dt.minute:02d}"
         ampm = "AM" if dt.hour < 12 else "PM"
-        return f"{hour}:{minute} {ampm} ET"
+        return f"{dt.strftime('%b')} {dt.day}, {hour}:{minute} {ampm} ET"
     except Exception:
         return ""
+
+
+def is_pre_market_fresh(
+    pre_price: float | None,
+    pre_time: int | float | None,
+    reg_time: int | float | None = None,
+    now_dt: datetime | None = None,
+) -> bool:
+    """Validate that pre-market quote is fresh and belongs to today's active session.
+
+    Rejects missing pre_time, trades from prior days (e.g. Friday pre-market on Monday morning),
+    trades outside the 04:00-09:30 ET window, and quotes after regular market traded today.
+    """
+    if pre_price is None or float(pre_price) <= 0:
+        return False
+    if pre_time is None or float(pre_time) <= 0:
+        return False
+    try:
+        if now_dt is None:
+            now_et = datetime.now(timezone.utc).astimezone(EASTERN_TZ)
+        elif now_dt.tzinfo is None:
+            now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+        else:
+            now_et = now_dt.astimezone(EASTERN_TZ)
+
+        if now_et.weekday() >= 5:
+            return False
+
+        pre_dt = datetime.fromtimestamp(float(pre_time), tz=timezone.utc).astimezone(EASTERN_TZ)
+        if pre_dt.date() != now_et.date():
+            return False
+
+        pre_tod = (pre_dt.hour, pre_dt.minute)
+        if not ((4, 0) <= pre_tod < (9, 30)):
+            return False
+
+        if pre_dt > now_et + timedelta(minutes=5):
+            return False
+
+        if reg_time and float(reg_time) > 0:
+            reg_dt = datetime.fromtimestamp(float(reg_time), tz=timezone.utc).astimezone(EASTERN_TZ)
+            if reg_dt.date() == now_et.date() and (reg_dt.hour, reg_dt.minute) >= (9, 30):
+                return False
+
+        return True
+    except Exception:
+        return False
+
+
+def is_post_market_fresh(
+    post_price: float | None,
+    post_time: int | float | None,
+    reg_time: int | float | None = None,
+    now_dt: datetime | None = None,
+) -> bool:
+    """Validate that after-hours quote is fresh and belongs to today's active session.
+
+    Rejects missing post_time, trades from prior days, trades outside the 16:00-20:00 ET window,
+    and trades older than regular market close.
+    """
+    if post_price is None or float(post_price) <= 0:
+        return False
+    if post_time is None or float(post_time) <= 0:
+        return False
+    try:
+        if now_dt is None:
+            now_et = datetime.now(timezone.utc).astimezone(EASTERN_TZ)
+        elif now_dt.tzinfo is None:
+            now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+        else:
+            now_et = now_dt.astimezone(EASTERN_TZ)
+
+        if now_et.weekday() >= 5:
+            return False
+
+        post_dt = datetime.fromtimestamp(float(post_time), tz=timezone.utc).astimezone(EASTERN_TZ)
+        if post_dt.date() != now_et.date():
+            return False
+
+        post_tod = (post_dt.hour, post_dt.minute)
+        if not ((16, 0) <= post_tod <= (20, 5)):
+            return False
+
+        if post_dt > now_et + timedelta(minutes=5):
+            return False
+
+        if reg_time and float(reg_time) > 0 and float(post_time) < float(reg_time):
+            return False
+
+        return True
+    except Exception:
+        return False
+
+
+def is_post_market_closed_valid(
+    post_price: float | None,
+    post_time: int | float | None,
+    reg_time: int | float | None = None,
+) -> bool:
+    """Validate that after-hours quote from the latest session is valid to display during closed session."""
+    if post_price is None or float(post_price) <= 0:
+        return False
+    if post_time is None or float(post_time) <= 0:
+        return False
+    try:
+        post_dt = datetime.fromtimestamp(float(post_time), tz=timezone.utc).astimezone(EASTERN_TZ)
+        post_tod = (post_dt.hour, post_dt.minute)
+        if not ((16, 0) <= post_tod <= (20, 15)):
+            return False
+        if reg_time and float(reg_time) > 0:
+            reg_dt = datetime.fromtimestamp(float(reg_time), tz=timezone.utc).astimezone(EASTERN_TZ)
+            if post_dt.date() != reg_dt.date() or float(post_time) < float(reg_time):
+                return False
+        return True
+    except Exception:
+        return False
 
 
 async def search_symbols(query: str, max_results: int = 5) -> list[dict]:
@@ -204,7 +320,12 @@ async def get_history_chart_png(yfinance_symbol: str, period: str = "1mo") -> by
         return None
 
 
-async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None = None, is_crypto: bool = False) -> str:
+async def get_quote_formatted(
+    yfinance_symbol: str,
+    display_symbol: str | None = None,
+    is_crypto: bool = False,
+    now_dt: datetime | None = None,
+) -> str:
     """Format full stock or crypto quote with extended-hours pricing."""
     from .utils import DIVIDER, _format_large_number, _format_market_time, _trend_arrow
 
@@ -250,10 +371,16 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
                 lines.append("<b>Session:</b> 24/7 continuous trading")
         else:
             # Stocks and ETFs: Evaluate Trading Session & Extended Hours
+            if now_dt is None:
+                now_et = datetime.now(timezone.utc).astimezone(EASTERN_TZ)
+            elif now_dt.tzinfo is None:
+                now_et = now_dt.replace(tzinfo=EASTERN_TZ)
+            else:
+                now_et = now_dt.astimezone(EASTERN_TZ)
+
             state = str(info.get("marketState") or "").upper()
             if not state:
                 # Infer by Eastern Time
-                now_et = datetime.now(timezone.utc).astimezone(EASTERN_TZ)
                 weekday = now_et.weekday()
                 if weekday >= 5:
                     state = "CLOSED"
@@ -274,18 +401,9 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
             pre_time = info.get("preMarketTime")
             post_time = info.get("postMarketTime")
 
-            # Validate pre-market: must not be older than regular market time if regular traded
-            pre_valid = (
-                pre_price is not None
-                and float(pre_price) > 0
-                and (not reg_time or not pre_time or pre_time >= reg_time - 86400)
-            )
-            # Validate post-market: must be from the current session (post_time >= reg_time)
-            post_valid = (
-                post_price is not None
-                and float(post_price) > 0
-                and (not reg_time or not post_time or post_time >= reg_time)
-            )
+            pre_valid = is_pre_market_fresh(pre_price, pre_time, reg_time, now_dt=now_et)
+            post_valid = is_post_market_fresh(post_price, post_time, reg_time, now_dt=now_et)
+            closed_post_valid = is_post_market_closed_valid(post_price, post_time, reg_time)
 
             if state in ("PRE", "PREPRE") and pre_valid:
                 # Active Pre-Market Session
@@ -303,7 +421,7 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
 
                 pre_sign = "+" if pre_change >= 0 else ""
                 pre_arrow = _trend_arrow(pre_change)
-                as_of = format_et_time(pre_time or reg_time)
+                as_of = format_et_time(pre_time)
 
                 lines.append(f"<b>Regular Price:</b> {_format_price(price, False)}")
                 if prev_close:
@@ -331,7 +449,7 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
 
                 post_sign = "+" if post_change >= 0 else ""
                 post_arrow = _trend_arrow(post_change)
-                as_of = format_et_time(post_time or reg_time)
+                as_of = format_et_time(post_time)
 
                 lines.append(f"<b>Regular Close:</b> {_format_price(price, False)}")
                 lines.append("")
@@ -359,7 +477,7 @@ async def get_quote_formatted(yfinance_symbol: str, display_symbol: str | None =
                 chg_str = f"{reg_sign}{_format_price(regular_change, False)} ({reg_sign}{regular_change_pct:.2f}%)"
                 p_fmt = _format_price(price, False)
                 lines.append(f"<b>Regular Close:</b> {p_fmt}  {reg_arrow} <b>Today:</b> {chg_str}")
-                if post_valid:
+                if closed_post_valid:
                     post_p = float(post_price)
                     post_change = info.get("postMarketChange")
                     if post_change is None and price:

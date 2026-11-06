@@ -57,6 +57,7 @@ DATA_DIR = os.getenv("DATA_DIR", "./data")
 
 
 BOT_MODE = os.getenv("BOT_MODE", "webhook").strip().lower()
+DROP_PENDING_UPDATES = os.getenv("DROP_PENDING_UPDATES", "false").strip().lower() == "true"
 
 # Legacy feature warnings
 if os.getenv("STORAGE_BACKEND"):

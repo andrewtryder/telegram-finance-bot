@@ -19,6 +19,7 @@ def create_server(application, secret: str) -> web.Application:
         raise ValueError("A valid TELEGRAM_WEBHOOK_SECRET is required.")
     server = web.Application(client_max_size=1024 * 1024)
     seen: OrderedDict[int, None] = OrderedDict()
+    in_flight: set[int] = set()
     lock = asyncio.Lock()
 
     async def health(_request):
@@ -35,17 +36,26 @@ def create_server(application, secret: str) -> web.Application:
                 raise ValueError("Invalid update ID")
         except (ValueError, KeyError, TypeError):
             raise web.HTTPBadRequest() from None
+
         async with lock:
-            if update_id in seen:
+            if update_id in seen or update_id in in_flight:
                 return web.json_response({"ok": True, "duplicate": True})
-            try:
-                update = Update.de_json(payload, application.bot)
-                await application.process_update(update)
-            except Exception:
-                raise web.HTTPServiceUnavailable() from None
-            seen[update_id] = None
-            if len(seen) > 10000:
-                seen.popitem(last=False)
+            in_flight.add(update_id)
+
+        try:
+            update = Update.de_json(payload, application.bot)
+            await application.process_update(update)
+        except Exception:
+            async with lock:
+                in_flight.discard(update_id)
+            raise web.HTTPServiceUnavailable() from None
+        else:
+            async with lock:
+                in_flight.discard(update_id)
+                seen[update_id] = None
+                if len(seen) > 10000:
+                    seen.popitem(last=False)
+
         return web.json_response({"ok": True})
 
     server.router.add_get("/health", health)
