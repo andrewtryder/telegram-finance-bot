@@ -5,9 +5,6 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  pull_request_target:
-    types: [opened, edited, synchronize]
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -23,35 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  # JOB 1: LINT PR TITLE (Runs securely from main branch context)
-  pr-lint:
-    if: github.event_name == 'pull_request_target'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      statuses: write
-    steps:
-      - uses: amannn/action-semantic-pull-request@v6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            feat
-            fix
-            perf
-            docs
-            style
-            refactor
-            test
-            build
-            ci
-            chore
-            revert
-
-  # JOB 2: TEST AND LINT (Runs tests and linter before deploy on pushes/PRs)
+  # TEST AND LINT (Runs tests and linter before deploy on pushes/PRs)
   test-and-lint:
-    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
