@@ -251,7 +251,11 @@ async def timed_fetch(url: str, options: Optional[dict] = None, timeout: float =
         raise RuntimeError("No HTTP fetcher available in this runtime")
     opts = options or {}
     try:
-        return await asyncio.wait_for(fetcher(url, opts), timeout=timeout)
+        try:
+            req = fetcher(url, **opts)
+        except TypeError:
+            req = fetcher(url, opts)
+        return await asyncio.wait_for(req, timeout=timeout)
     except asyncio.TimeoutError:
         safe_url = sanitize_url(url)
         raise RuntimeError(f"HTTP fetch timed out after {timeout}s: {safe_url}") from None
@@ -1003,7 +1007,8 @@ async def handle_request(request: Any, env: Any) -> Response:
 
     try:
         validate_webhook_config(env)
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] validate_webhook_config failed: {e}")
         return Response("Service unavailable", status=503)
 
     req_headers = getattr(request, "headers", {})
@@ -1053,6 +1058,8 @@ async def handle_request(request: Any, env: Any) -> Response:
     if not match:
         return Response.json({"ok": True})
 
+    print(f"[INFO] Processing update {update_id}: chat_id={(message.get('chat') or {}).get('id')}, text={text_msg!r}")
+
     try:
         bot_mention = match.group(2)
         if bot_mention:
@@ -1066,6 +1073,7 @@ async def handle_request(request: Any, env: Any) -> Response:
         command = match.group(1).lower()
 
         if allowed and "0" not in allowed and str(chat_id) not in allowed:
+            print(f"[WARN] Access denied for chat_id={chat_id}. Allowed: {allowed}")
             reply_text = "Access denied. This bot is private."
         else:
             args_str = text_msg[match.end() :].strip()
@@ -1074,14 +1082,23 @@ async def handle_request(request: Any, env: Any) -> Response:
                 metrics["commands"][command] = metrics["commands"].get(command, 0) + 1
             try:
                 reply_text = await reply_for(command, args, message, env)
-            except Exception:
+            except Exception as e:
+                print(f"[ERROR] reply_for({command}, {args}) raised: {e}")
+                import traceback
+
+                traceback.print_exc()
                 metrics["provider_errors"] += 1
                 reply_text = "Market data is unavailable right now. Please try again later."
 
         if isinstance(reply_text, dict) and "image" in reply_text:
             await send_photo(env, chat_id, reply_text["image"], reply_text["caption"])
         elif reply_text is not None:
-            await telegram(env, "sendMessage", {"chat_id": chat_id, "text": reply_text, "parse_mode": "HTML"})
+            try:
+                await telegram(env, "sendMessage", {"chat_id": chat_id, "text": reply_text, "parse_mode": "HTML"})
+            except Exception as send_err:
+                print(f"[WARN] Failed to send HTML message ({send_err}). Retrying plain text...")
+                clean_text = re.sub(r"<[^>]+>", "", reply_text)
+                await telegram(env, "sendMessage", {"chat_id": chat_id, "text": clean_text})
 
         # Record successfully processed update id
         recent_updates[update_id] = None
@@ -1089,6 +1106,11 @@ async def handle_request(request: Any, env: Any) -> Response:
             recent_updates.popitem(last=False)
 
         return Response.json({"ok": True})
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] Exception processing update {update_id}: {e}")
+        import traceback
+
+        traceback.print_exc()
         metrics["errors"] += 1
-        return Response("Service unavailable", status=503)
+        # Acknowledge update to Telegram so a failing/unparseable message does not cause an infinite retry loop
+        return Response.json({"ok": True, "error": str(e)})

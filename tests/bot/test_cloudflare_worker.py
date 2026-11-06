@@ -592,6 +592,26 @@ async def test_worker_timed_fetch_redacts_token_on_timeout(monkeypatch):
     assert "/bot<redacted>/sendMessage" in err_msg
 
 
+@pytest.mark.asyncio
+async def test_worker_timed_fetch_keyword_args(monkeypatch):
+    recorded = {}
+
+    async def kw_only_fetch(url, *, headers=None, method=None, body=None):
+        recorded["url"] = url
+        recorded["headers"] = headers
+        recorded["method"] = method
+        recorded["body"] = body
+        return "ok"
+
+    monkeypatch.setattr("cloudflare.webhook.cf_fetch", kw_only_fetch)
+    res = await timed_fetch("https://example.com/api", {"method": "POST", "headers": {"h": "v"}, "body": "data"})
+    assert res == "ok"
+    assert recorded["url"] == "https://example.com/api"
+    assert recorded["method"] == "POST"
+    assert recorded["headers"] == {"h": "v"}
+    assert recorded["body"] == "data"
+
+
 def test_ranges_displays_day_and_52w_without_single_day_week_range():
     q = {
         "meta": {
