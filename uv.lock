@@ -1496,7 +1496,7 @@ wheels = [
 
 [[package]]
 name = "telegram-finance-bot"
-version = "0.6.1"
+version = "0.6.2"
 source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },
