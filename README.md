@@ -212,4 +212,10 @@ npx --yes wrangler@4 deploy --dry-run
 
 - **Automated Validation:** Every push and pull request runs `pytest`, `ruff check`, `ruff format`, and `wrangler deploy --dry-run`.
 - **Manual Deployments:** Deployments to Cloudflare or Railway are strictly manual via **Workflow Dispatch** (`none`, `cloudflare`, or `railway`). No credentials are committed or required for tests.
-- **CodeQL Analysis:** GitHub CodeQL scans Python and GitHub Actions workflows. Note that if GitHub's Default CodeQL Setup was previously configured on a branch that contained JavaScript, GitHub's default matrix may attempt to scan JavaScript until this refactor is merged into `main`. Once merged into `main`, GitHub automatically recognizes that zero JavaScript remains and scopes scans to Python and Actions.
+- **CodeQL Analysis:** GitHub CodeQL scans Python and GitHub Actions workflows with zero JavaScript overhead.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
