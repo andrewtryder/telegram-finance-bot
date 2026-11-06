@@ -181,8 +181,8 @@ TELEGRAM_BOT_TOKEN=...
 Use the included helper CLI (`bot.manage_webhook`) to seamlessly switch transports:
 
 - **Check status:** `uv run python -m bot.manage_webhook info`
-- **Register Cloudflare:** `WEBHOOK_URL="https://<worker>.workers.dev/webhook" uv run python -m bot.manage_webhook register`
-- **Register Railway:** `WEBHOOK_URL="https://<railway-domain>/webhook" uv run python -m bot.manage_webhook register`
+- **Register Cloudflare:** `WEBHOOK_URL="https://<worker>.workers.dev/webhook" TELEGRAM_WEBHOOK_SECRET="<secret>" uv run python -m bot.manage_webhook register`
+- **Register Railway:** `WEBHOOK_URL="https://<railway-domain>/webhook" TELEGRAM_WEBHOOK_SECRET="<secret>" uv run python -m bot.manage_webhook register`
 - **Switch to Polling:** `uv run python -m bot.manage_webhook remove`
 
 For comprehensive migration procedures between all platforms and transports, see [**`docs/deployment-modes.md`**](docs/deployment-modes.md).

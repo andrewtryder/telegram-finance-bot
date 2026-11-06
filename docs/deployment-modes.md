@@ -255,10 +255,10 @@ PORT=8080
 Railway provides an optional **Serverless** (App-Sleeping) toggle under:
 **Service Settings** $\rightarrow$ **Deploy** $\rightarrow$ **Serverless** (or **App Sleeping**).
 
-- **How it works:** When no HTTP requests arrive for approximately 5 minutes, Railway scales the container down to 0 instances. When Telegram sends an incoming webhook POST, Railway boots the container to service the request.
+- **How it works:** Railway bases sleeping on the absence of incoming HTTP requests and outbound network activity. When an application remains idle (typically after 5–10 minutes of inactivity), Railway puts the container to sleep to conserve resources. When Telegram delivers an incoming webhook `POST`, Railway wakes the container to process the request.
 - **Cost implications:** Reduces billable vCPU and memory hours during idle hours (nights, weekends). However, Railway charges a base platform fee or usage minimum depending on your plan tier; Serverless does not guarantee absolute zero billing.
-- **Cold Starts & Latency:** Waking a sleeping container takes approximately 2–5 seconds. While Telegram automatically retries unacknowledged updates, cold starts can occasionally cause transient gateway timeouts (HTTP 502/504) if initialization exceeds Telegram's immediate connection timeout.
-- **Webhook Retry Limits:** Telegram retries unacknowledged updates with exponential backoff for up to 24 hours. Do not rely on retries indefinitely—if your service fails to respond with HTTP 200 consistently, Telegram will eventually suspend webhook delivery.
+- **Cold Starts & Latency:** Container wake-up duration is not guaranteed and varies depending on base image startup and network conditions. Cold starts can occasionally introduce noticeable response latency or produce transient gateway timeouts (HTTP 502/504) if initialization exceeds Telegram's immediate connection timeout.
+- **Telegram Retries & Queued Update Retention:** Telegram attempts to redeliver updates after an unsuccessful webhook request, but does not guarantee a specific retry schedule or backoff window. Telegram retains unconfirmed pending updates in its queue for **up to 24 hours**; if the webhook endpoint remains unreachable or continues failing, updates older than 24 hours expire and are permanently dropped. Do not rely on retries indefinitely—ensure your service returns HTTP 200 promptly.
 
 ---
 
@@ -381,7 +381,7 @@ If you need to test the webhook transport (`bot.webhook`) locally:
 
 ## 6. The Webhook Management CLI
 
-The repository includes a dedicated management tool: [`bot/manage_webhook.py`](file:///Users/atr/code/telegram-finance-bot/bot/manage_webhook.py).
+The repository includes a dedicated management tool: [`bot/manage_webhook.py`](../bot/manage_webhook.py).
 
 This tool safely interacts with Telegram's `setWebhook`, `deleteWebhook`, and `getWebhookInfo` endpoints without exposing tokens in shell history or query parameters.
 
@@ -445,12 +445,16 @@ Switching from Cloudflare Workers to Railway Webhook mode.
      Ensure it returns `{"ok": true}`.
 
 2. **Switch Webhook URL to Railway:**
-   Run `register` with the Railway URL. Telegram immediately points all new updates to Railway:
+   Run `register` with the Railway URL and Railway webhook secret. Telegram immediately points all new updates to Railway:
    ```bash
    WEBHOOK_URL="https://<your-railway-domain>.up.railway.app/webhook" \
+   TELEGRAM_WEBHOOK_SECRET="<railway-webhook-secret>" \
      uv run python -m bot.manage_webhook register
    ```
-   *(Note: Calling `register` replaces the existing Cloudflare webhook atomically without needing to call `remove` first).*
+   > [!IMPORTANT]
+   > Explicitly passing the destination host's `TELEGRAM_WEBHOOK_SECRET` ensures Telegram registers the endpoint with the matching secret. If Cloudflare and Railway use different secrets, relying on an ambient `.env` or shell variable could cause Telegram to send the old secret, resulting in HTTP 403 Forbidden errors.
+   > 
+   > Calling `register` replaces the existing Cloudflare webhook atomically without needing to call `remove` first.
 
 3. **Confirm Active Destination:**
    ```bash
@@ -480,10 +484,13 @@ Switching from Railway Webhook mode to Cloudflare Workers.
      Ensure it returns `{"ok": true}`.
 
 2. **Switch Webhook URL to Cloudflare:**
+   Register the Cloudflare Worker URL with Cloudflare's matching webhook secret:
    ```bash
    WEBHOOK_URL="https://<your-worker-name>.<your-subdomain>.workers.dev/webhook" \
+   TELEGRAM_WEBHOOK_SECRET="<cloudflare-webhook-secret>" \
      uv run python -m bot.manage_webhook register
    ```
+   *(Note: Ensure `TELEGRAM_WEBHOOK_SECRET` matches the secret configured in Cloudflare via `wrangler secret put TELEGRAM_WEBHOOK_SECRET` to prevent HTTP 403 Forbidden errors).*
 
 3. **Confirm Destination:**
    ```bash
@@ -550,6 +557,7 @@ Switching from Railway Long Polling to Cloudflare Workers.
 3. **Register the Cloudflare Webhook:**
    ```bash
    WEBHOOK_URL="https://<your-worker-name>.<your-subdomain>.workers.dev/webhook" \
+   TELEGRAM_WEBHOOK_SECRET="<cloudflare-webhook-secret>" \
      uv run python -m bot.manage_webhook register
    ```
 
@@ -585,6 +593,7 @@ Switching Railway from Long Polling mode to Webhook mode.
 4. **Register the Railway Webhook URL:**
    ```bash
    WEBHOOK_URL="https://<your-railway-domain>.up.railway.app/webhook" \
+   TELEGRAM_WEBHOOK_SECRET="<railway-webhook-secret>" \
      uv run python -m bot.manage_webhook register
    ```
 
@@ -686,3 +695,4 @@ Switching Railway from Webhook mode to Long Polling mode.
    Telegram retains unacknowledged pending updates on its servers for **up to 24 hours**. If a migration takes longer than 24 hours or an outage persists, Telegram eventually purges older updates.
 6. **Instant Rollback:**  
    If a migration fails or the new target experiences issues, rollback is instantaneous: simply re-register the previously working webhook URL using `bot.manage_webhook register`, or start your backup poller after calling `bot.manage_webhook remove`.
+
