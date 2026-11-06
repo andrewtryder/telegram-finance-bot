@@ -16,6 +16,15 @@ from telegram.ext import Application, ContextTypes
 from bot.commands import basics as main
 
 
+def test_help_indicates_retired_features():
+    text = main.get_help_text()
+    assert "<b>/stock &lt;ticker&gt;</b>" in text
+    assert "/watchlist</b>" not in text
+    assert "/alert</b>" not in text
+    assert "retired" in main.get_help_text(specific_command="watchlist").lower()
+    assert "retired" in main.get_help_text(specific_command="alert").lower()
+
+
 @pytest.fixture
 def mock_update():
     update = MagicMock(spec=Update)

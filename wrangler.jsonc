@@ -1,0 +1,10 @@
+{
+  "name": "telegram-finance-bot-webhook",
+  "main": "cloudflare/worker.py",
+  "compatibility_date": "2026-10-20",
+  "compatibility_flags": ["python_workers"],
+  "observability": { "enabled": true },
+  "vars": {
+    "BOT_MODE": "webhook"
+  }
+}

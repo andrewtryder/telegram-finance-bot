@@ -10,15 +10,10 @@ Thank you for your interest in contributing! Please review the guidelines below 
    cd telegram-finance-bot
    ```
 
-2. Create and activate a virtual environment:
+2. Install [uv](https://docs.astral.sh/uv/) and sync production and
+   development dependencies:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Install production and development dependencies:
-   ```bash
-   pip install -r requirements.txt -r requirements-test.txt
+   uv sync --locked
    ```
 
 ## Development and Coding Standards
@@ -29,23 +24,23 @@ We use [Ruff](https://github.com/astral-sh/ruff) to enforce code formatting and 
 
 - Check for lint errors:
   ```bash
-  ruff check .
+  uv run --locked ruff check .
   ```
 - Run formatting check:
   ```bash
-  ruff format --check .
+  uv run --locked ruff format --check .
   ```
 - Automatically fix simple lint errors:
   ```bash
-  ruff check --fix .
-  ruff format .
+  uv run --locked ruff check --fix .
+  uv run --locked ruff format .
   ```
 
 ### Running Tests
 
-We use `pytest` for unit testing. Set `PYTHONPATH=.` when running tests locally:
+We use `pytest` for unit testing:
 ```bash
-PYTHONPATH=. pytest tests/
+uv run --locked python -m pytest tests/
 ```
 
 Before submitting a PR, make sure all tests pass and that you write tests for any new features or bug fixes.
@@ -59,7 +54,7 @@ Examples:
 - `fix: resolve escaping issue in HTML parsing`
 - `perf: cache provider responses`
 - `docs: clarify Railway deployment`
-- `chore: update requirements.txt`
+- `chore: update dependencies`
 
 Release impact:
 - `fix:` creates a patch release.

@@ -55,6 +55,29 @@ INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", "0.5"))
 MAX_SEARCH_LEN = 64
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 
+
+BOT_MODE = os.getenv("BOT_MODE", "webhook").strip().lower()
+DROP_PENDING_UPDATES = os.getenv("DROP_PENDING_UPDATES", "false").strip().lower() == "true"
+
+# Legacy feature warnings
+if os.getenv("STORAGE_BACKEND"):
+    backend_val = os.getenv("STORAGE_BACKEND", "").strip().lower()
+    if backend_val not in ("none", ""):
+        logger.warning(
+            "STORAGE_BACKEND=%s is deprecated. The bot is now fully stateless and does not use a database.",
+            backend_val,
+        )
+if os.getenv("WATCHLIST_ENABLED"):
+    logger.warning("WATCHLIST_ENABLED is deprecated. Watchlists have been retired; the bot is now fully stateless.")
+if os.getenv("ALERTS_ENABLED"):
+    logger.warning("ALERTS_ENABLED is deprecated. Price alerts have been retired; the bot is now fully stateless.")
+
+
+def validate_config() -> None:
+    if BOT_MODE not in ("polling", "webhook"):
+        raise ValueError("BOT_MODE must be polling or webhook")
+
+
 # Parse ALLOWED_CHAT_IDS
 ALLOWED_CHAT_IDS = set()
 ALLOWED_CHAT_IDS_ENV = os.getenv("ALLOWED_CHAT_IDS")
@@ -80,6 +103,7 @@ if ADMIN_USER_IDS_ENV:
                 logger.warning(f"Invalid user ID in ADMIN_USER_IDS: {uid}")
 
 INDEX_MAPPING = {"^GSPC": "S&P 500", "^DJI": "Dow Jones", "^IXIC": "Nasdaq"}
+FUTURES_MAPPING = {"ES=F": "S&P 500 Futures", "NQ=F": "Nasdaq 100 Futures", "YM=F": "Dow Futures"}
 
 
 def init_honeybadger() -> bool:

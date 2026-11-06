@@ -10,7 +10,7 @@ from telegram.constants import ChatType
 from telegram.ext import Application, ContextTypes
 
 from bot.config import logger
-from bot.utils import DIVIDER
+from bot.utils import DIVIDER, command_guard
 
 
 def get_help_text(first_name: str = "there", specific_command: str = None) -> str:
@@ -92,11 +92,11 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "Compares 2–4 stock or crypto quotes side by side "
             "(e.g. <code>/compare AAPL MSFT</code>, <code>/compare BTC ETH</code>)."
         )
-    elif specific_command == "watchlist":
+    elif specific_command in ("watchlist", "alert"):
         return (
-            "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
-            "Personal watchlist (max 10), shared across private chats, groups, and channels. "
-            "Accepts stocks and crypto (e.g. <code>AAPL</code>, <code>BTC</code>, <code>BTC/USD</code>)."
+            f"<b>/{specific_command}</b>\n{DIVIDER}\n"
+            "⚠️ <b>Notice:</b> Watchlists and price alerts have been retired. "
+            "The bot is now a stateless financial market quote service."
         )
     elif specific_command == "chart":
         return (
@@ -104,33 +104,22 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "Renders a closing-price line chart as a PNG (default period: 1mo). "
             "Works for stocks and crypto (e.g. <code>/chart BTC</code>)."
         )
-    elif specific_command == "alert":
-        return (
-            "<b>/alert add &lt;ticker&gt; above|below &lt;price&gt;</b>\n"
-            "<b>/alert list</b> · <b>/alert remove &lt;id&gt;</b>\n"
-            "One-shot price alerts (max 20 per chat). Chat-owned: alerts fire "
-            "into this chat and anyone here can list or remove them "
-            "(unlike personal /watchlist). Stocks and crypto "
-            "(e.g. <code>/alert add BTC above 100000</code>)."
-        )
 
     lines = [
         f"👋 Hello {escaped_name}! I am your Financial Market Bot 📈",
         DIVIDER,
         "",
         "📈 <b>Stocks</b>",
-        "📊 <b>/stock &lt;ticker&gt;</b> - Current price of a stock",
+        "📊 <b>/stock &lt;ticker&gt;</b> - Current price of a stock (with pre/post-market)",
         "ℹ️ <b>/stockinfo &lt;ticker&gt;</b> - Detailed company info",
         "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
         "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
         "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
-        "👀 <b>/watchlist</b> - Personal watchlist (shared across chats)",
         "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
-        "🔔 <b>/alert</b> - One-shot price alerts (chat-owned)",
         "",
         "🪙 <b>Crypto &amp; Markets</b>",
         "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",
-        "📈 <b>/indices</b> - Levels of major market indices",
+        "📈 <b>/indices</b> - Major market indices and futures",
         "",
         "🔍 <b>Search</b>",
         "🔍 <b>/search &lt;query&gt;</b> - Search for a symbol",
@@ -152,6 +141,18 @@ async def setup_commands(application: Application) -> None:
 
 async def _ignore_non_command_group_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pass
+
+
+@command_guard
+async def retired_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    if message is None:
+        return
+    await message.reply_text(
+        "⚠️ <b>Notice:</b> Watchlists and price alerts have been retired.\n"
+        "The bot is now a stateless financial market quote service.",
+        parse_mode="HTML",
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

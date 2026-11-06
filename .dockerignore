@@ -25,6 +25,9 @@ tests/
 
 # Local secrets
 .env
+node_modules/
+.wrangler/
+.dev.vars*
 
 # Documentation & extras (not needed in image)
 *.md

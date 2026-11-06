@@ -11,30 +11,30 @@ from telegram.ext import (
 from bot.commands import (
     _ignore_non_command_group_messages,
     admin,
-    alert,
     chart,
     compare,
     crypto,
     indices,
     marketcap,
+    retired_command,
     search,
     setup_commands,
     start,
     stock,
     stockinfo,
     stocknews,
-    watchlist,
 )
 from bot.config import (
+    BOT_MODE,
+    DROP_PENDING_UPDATES,
     TELEGRAM_BOT_TOKEN,
     init_honeybadger,
     is_network_timeout,
     logger,
     notify_honeybadger,
+    validate_config,
 )
-from bot.jobs import check_price_alerts_job, log_metrics_job
 from bot.metrics import record_error, snapshot
-from bot.storage import init_storage
 
 # Optional: Only ignore text/commands in groups if you didn't enable Privacy Mode
 GROUP_PRIVACY_FILTER = filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.Regex(r"^/")
@@ -79,15 +79,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(application) -> None:
+    webhook = await application.bot.get_webhook_info()
+    if webhook.url:
+        raise RuntimeError("Telegram webhook is active; remove it before starting polling")
     await setup_commands(application)
-    init_storage()
-
-    if application.job_queue:
-        application.job_queue.run_repeating(check_price_alerts_job, interval=60, first=15)
-        application.job_queue.run_repeating(log_metrics_job, interval=900, first=60)
-        logger.info("Scheduled alert poller (60s) and metrics logger (15m).")
-    else:
-        logger.warning("JobQueue unavailable; alerts and periodic metrics logging are disabled.")
 
 
 async def post_shutdown(application) -> None:
@@ -95,19 +90,8 @@ async def post_shutdown(application) -> None:
     logger.info(f"metrics_snapshot_shutdown {data}")
 
 
-def main():
-    """Start the bot."""
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
-        return
-
-    init_honeybadger()
-
-    application = (
-        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
-    )
-
-    # Register command handlers
+def register_handlers(application):
+    """Register the command and error handlers for any transport."""
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     application.add_handler(CommandHandler("stock", stock))
@@ -117,13 +101,12 @@ def main():
     application.add_handler(CommandHandler("stocknews", stocknews))
     application.add_handler(CommandHandler("marketcap", marketcap))
     application.add_handler(CommandHandler("compare", compare))
-    application.add_handler(CommandHandler("watchlist", watchlist))
     application.add_handler(CommandHandler("chart", chart))
-    application.add_handler(CommandHandler("alert", alert))
     application.add_handler(CommandHandler("admin", admin))
-
-    # Passing a tuple lets one function handle multiple spellings of the command!
     application.add_handler(CommandHandler(("indices", "indicies"), indices))
+
+    # Gracefully inform users when retired stateful commands are sent
+    application.add_handler(CommandHandler(("alert", "watchlist"), retired_command))
 
     # Error handler
     application.add_error_handler(error_handler)
@@ -134,8 +117,25 @@ def main():
         group=1,
     )
 
-    logger.info("Starting bot... Waiting for commands.")
-    application.run_polling(drop_pending_updates=True)
+
+def main():
+    """Start the bot in polling mode."""
+    validate_config()
+    if BOT_MODE != "polling":
+        raise RuntimeError("bot.main only supports polling mode")
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
+        return
+
+    init_honeybadger()
+
+    application = (
+        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
+    )
+    register_handlers(application)
+
+    logger.info(f"Starting bot (drop_pending_updates={DROP_PENDING_UPDATES})... Waiting for commands.")
+    application.run_polling(drop_pending_updates=DROP_PENDING_UPDATES)
 
 
 if __name__ == "__main__":
