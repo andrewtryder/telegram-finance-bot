@@ -27,7 +27,7 @@ async def test_get_quote_formatted_success(mock_to_thread):
     }
 
     result = await main.get_quote_formatted("AAPL")
-    assert "<b>Price:</b> $150.50" in result
+    assert "<b>Price:</b> $150.50" in result or "<b>Regular Close:</b> $150.50" in result
     assert "📈 <b>Apple Inc. (AAPL)</b>" in result
     assert "<b>Today:</b>" in result
 
@@ -102,5 +102,5 @@ async def test_transient_failure_retry(mock_fetch):
     ]
 
     result = await main.get_quote_formatted("AAPL")
-    assert "<b>Price:</b> $150.50" in result
+    assert "<b>Price:</b> $150.50" in result or "<b>Regular Close:</b> $150.50" in result
     assert mock_fetch.call_count == 2

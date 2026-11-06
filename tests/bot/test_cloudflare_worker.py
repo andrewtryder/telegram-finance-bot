@@ -627,3 +627,39 @@ def test_ranges_displays_day_and_52w_without_single_day_week_range():
     assert "Day $150.00–$155.00" in r[0]
     assert "52W $120.00–$180.00" in r[1]
     assert not any("Week" in item for item in r)
+
+
+@pytest.mark.asyncio
+async def test_worker_send_photo_failure_falls_back_to_message(monkeypatch):
+    env = {
+        "BOT_MODE": "webhook",
+        "TELEGRAM_BOT_TOKEN": "12345:TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET": "secret_abc",
+    }
+    sent_messages = []
+
+    async def mock_telegram(_env, method, payload=None):
+        if method == "sendMessage":
+            sent_messages.append(payload)
+        return {"ok": True}
+
+    async def mock_send_photo(_env, _chat_id, _photo, _caption):
+        raise RuntimeError("Photo upload failed")
+
+    async def mock_reply_for(*_args, **_kwargs):
+        return {"image": b"fake-png", "caption": "AAPL Chart"}
+
+    monkeypatch.setattr("cloudflare.webhook.telegram", mock_telegram)
+    monkeypatch.setattr("cloudflare.webhook.send_photo", mock_send_photo)
+    monkeypatch.setattr("cloudflare.webhook.reply_for", mock_reply_for)
+
+    req = MockRequest(
+        method="POST",
+        url="https://example.com/webhook",
+        headers={"x-telegram-bot-api-secret-token": "secret_abc"},
+        body=json.dumps({"update_id": 999123, "message": {"chat": {"id": 123}, "text": "/chart AAPL"}}),
+    )
+    res = await handle_request(req, env)
+    assert res.status == 200
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["text"] == "AAPL Chart"

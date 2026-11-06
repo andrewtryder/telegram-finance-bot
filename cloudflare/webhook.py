@@ -1091,7 +1091,15 @@ async def handle_request(request: Any, env: Any) -> Response:
                 reply_text = "Market data is unavailable right now. Please try again later."
 
         if isinstance(reply_text, dict) and "image" in reply_text:
-            await send_photo(env, chat_id, reply_text["image"], reply_text["caption"])
+            try:
+                await send_photo(env, chat_id, reply_text["image"], reply_text["caption"])
+            except Exception as pe:
+                print(f"[WARN] Failed to send photo ({pe}). Retrying caption as message...")
+                await telegram(
+                    env,
+                    "sendMessage",
+                    {"chat_id": chat_id, "text": reply_text.get("caption", "Chart generated.")},
+                )
         elif reply_text is not None:
             try:
                 await telegram(env, "sendMessage", {"chat_id": chat_id, "text": reply_text, "parse_mode": "HTML"})
