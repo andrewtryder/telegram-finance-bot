@@ -40,12 +40,16 @@ The bot is entirely stateless and requires **no database, no persistent volumes,
 
 | Target | Transport | Database | Recommended | Notes |
 |---|:---:|:---:|:---:|---|
-| **Cloudflare Workers** | Webhook | None | **Yes (Primary)** | Zero cost on Workers Free tier. No persistent container. |
-| **Railway Serverless** | Webhook | None | Optional | Automatically sleeps when idle (~5m inactive). |
-| **Railway Standard** | Webhook | None | Optional | Stays awake; may incur continuous compute costs. |
-| **Railway** | Polling | None | Optional | Requires an always-on process (not recommended for cost). |
-| **Local / Docker** | Webhook | None | Supported | For local webhook testing (e.g. via ngrok or tunnel). |
-| **Local / Dev** | Polling | None | Supported | Fastest way to run locally without public HTTPS URLs. |
+| **Cloudflare Workers** | Webhook | None | **Yes (Primary)** | Zero cost on Workers Free tier. Ephemeral Python serverless handler. |
+| **Railway Serverless** | Webhook | None | Optional | Automatically sleeps when idle (~5m inactive) to reduce compute usage. |
+| **Railway Standard** | Webhook | None | Optional | Stays awake; continuous container runtime. |
+| **Railway** | Polling | None | Optional | Requires an always-on persistent process (higher cost; not recommended). |
+| **Local / Docker** | Webhook | None | Supported | For local webhook testing via an HTTPS tunnel (e.g. ngrok or Cloudflare Tunnel). |
+| **Local / Dev** | Polling | None | Supported | Fastest way to run locally without public HTTPS URLs or tunnels. |
+
+> [!TIP]
+> 📖 **Comprehensive Deployment & Migration Guide:**  
+> For complete step-by-step setup instructions, switching procedures, rollback plans, and troubleshooting for every mode, refer to [**`docs/deployment-modes.md`**](docs/deployment-modes.md).
 
 ---
 
@@ -87,10 +91,10 @@ For local emulation: create `.dev.vars` (never committed to git) and run `npx wr
 
 ### 3. Deploy Worker
 
-Deploy to Cloudflare:
+Deploy to Cloudflare preserving environment variables:
 
 ```bash
-npx wrangler deploy
+npx wrangler deploy --keep-vars
 ```
 
 Your Worker URL will be: `https://<worker-name>.<subdomain>.workers.dev`.
@@ -104,12 +108,12 @@ export TELEGRAM_BOT_TOKEN="<bot-token>"
 export TELEGRAM_WEBHOOK_SECRET="<webhook-secret>"
 export WEBHOOK_URL="https://<worker-name>.<subdomain>.workers.dev/webhook"
 
-python -m bot.manage_webhook register
+uv run python -m bot.manage_webhook register
 ```
 
 To inspect webhook delivery status:
 ```bash
-python -m bot.manage_webhook info
+uv run python -m bot.manage_webhook info
 ```
 
 ---
@@ -128,7 +132,7 @@ Railway can run the stateless bot via its Python HTTP webhook server (`bot.webho
 3. Generate a Railway public domain (e.g. `https://mybot.up.railway.app`).
 4. Register the webhook with Telegram:
    ```bash
-   WEBHOOK_URL="https://mybot.up.railway.app/webhook" python -m bot.manage_webhook register
+   WEBHOOK_URL="https://mybot.up.railway.app/webhook" uv run python -m bot.manage_webhook register
    ```
 
 ### 2. Enabling Railway Serverless / App-Sleeping
@@ -149,7 +153,7 @@ TELEGRAM_BOT_TOKEN=...
 ```
 
 > [!WARNING]
-> Before running in polling mode, remove any registered webhook with `python -m bot.manage_webhook remove`. Telegram will reject polling while a webhook is active. Ensure exactly 1 replica is running.
+> Before running in polling mode, remove any registered webhook with `uv run python -m bot.manage_webhook remove`. Telegram will reject polling while a webhook is active. Ensure exactly 1 replica is running.
 
 ---
 
@@ -176,10 +180,12 @@ TELEGRAM_BOT_TOKEN=...
 
 Use the included helper CLI (`bot.manage_webhook`) to seamlessly switch transports:
 
-- **Check status:** `python -m bot.manage_webhook info`
-- **Register Cloudflare:** `WEBHOOK_URL="https://<worker>.workers.dev/webhook" python -m bot.manage_webhook register`
-- **Register Railway:** `WEBHOOK_URL="https://<railway-domain>/webhook" python -m bot.manage_webhook register`
-- **Switch to Polling:** `python -m bot.manage_webhook remove`
+- **Check status:** `uv run python -m bot.manage_webhook info`
+- **Register Cloudflare:** `WEBHOOK_URL="https://<worker>.workers.dev/webhook" uv run python -m bot.manage_webhook register`
+- **Register Railway:** `WEBHOOK_URL="https://<railway-domain>/webhook" uv run python -m bot.manage_webhook register`
+- **Switch to Polling:** `uv run python -m bot.manage_webhook remove`
+
+For comprehensive migration procedures between all platforms and transports, see [**`docs/deployment-modes.md`**](docs/deployment-modes.md).
 
 Always ensure the previous instance is stopped before starting a poller.
 
