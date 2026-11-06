@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.6.1](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.6.0...telegram-finance-bot-v0.6.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ci:** remove duplicate pr-lint and pull_request_target from ci-cd workflow ([f6a1042](https://github.com/andrewtryder/telegram-finance-bot/commit/f6a104259aa737498d1bb9078a2cf0c5060a962e))
+* **ci:** use --frozen in ci-cd workflow, update uv.lock to 0.6.0, and configure release-please to bump uv.lock ([300e5ce](https://github.com/andrewtryder/telegram-finance-bot/commit/300e5ce53a0c18cb33499b7cef5376d6a339ce19))
+
 ## [0.6.0](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.4...telegram-finance-bot-v0.6.0) (2026-11-06)
 
 
