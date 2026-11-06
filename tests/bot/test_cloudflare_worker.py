@@ -425,7 +425,7 @@ async def test_cloudflare_all_core_commands(monkeypatch):
     # /stockinfo
     res_info = await reply_for("stockinfo", ["AAPL"], dummy_msg, env)
     assert "Technology" in res_info
-    assert "apple.com" in res_info
+    assert "https://apple.com" in res_info
 
     # /admin stats
     res_admin = await reply_for("admin", ["stats"], dummy_msg, env)
