@@ -55,6 +55,31 @@ INITIAL_BACKOFF = float(os.getenv("INITIAL_BACKOFF", "0.5"))
 MAX_SEARCH_LEN = 64
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name, str(default)).strip().lower()
+    if value not in ("true", "false"):
+        raise ValueError(f"{name} must be true or false")
+    return value == "true"
+
+
+BOT_MODE = os.getenv("BOT_MODE", "polling").strip().lower()
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "sqlite").strip().lower()
+WATCHLIST_ENABLED = _env_bool("WATCHLIST_ENABLED", True)
+ALERTS_ENABLED = _env_bool("ALERTS_ENABLED", True)
+
+
+def validate_config() -> None:
+    if BOT_MODE not in ("polling", "webhook"):
+        raise ValueError("BOT_MODE must be polling or webhook")
+    if STORAGE_BACKEND not in ("none", "sqlite", "d1"):
+        raise ValueError("STORAGE_BACKEND must be none, sqlite, or d1")
+    if STORAGE_BACKEND == "none" and (WATCHLIST_ENABLED or ALERTS_ENABLED):
+        raise ValueError("Enabled watchlists or alerts require persistent storage")
+    if BOT_MODE == "polling" and STORAGE_BACKEND == "d1":
+        raise ValueError("D1 is not supported in polling mode")
+
+
 # Parse ALLOWED_CHAT_IDS
 ALLOWED_CHAT_IDS = set()
 ALLOWED_CHAT_IDS_ENV = os.getenv("ALLOWED_CHAT_IDS")

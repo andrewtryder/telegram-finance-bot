@@ -35,3 +35,6 @@ venv.bak/
 .jules/
 .Jules/
 data/
+node_modules/
+.wrangler/
+.dev.vars*

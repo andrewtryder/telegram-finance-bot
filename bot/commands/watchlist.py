@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from bot.config import logger
+from bot.config import WATCHLIST_ENABLED, logger
 from bot.services import _get_yfinance_info, format_compact_quote
 from bot.storage import watchlist_add, watchlist_list, watchlist_remove
 from bot.symbols import crypto_display_symbol, is_crypto_symbol, resolve_market_symbol
@@ -25,6 +25,10 @@ async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
     if message is None:
         logger.warning("Ignoring /watchlist update without an effective message")
+        return
+
+    if not WATCHLIST_ENABLED:
+        await message.reply_text("Watchlists are disabled on this bot.")
         return
 
     command_text = message.text or "/watchlist"

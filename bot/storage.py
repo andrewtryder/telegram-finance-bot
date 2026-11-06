@@ -60,7 +60,10 @@ def _migrate_watchlist_to_user_id(conn: sqlite3.Connection) -> None:
 
 def init_storage() -> None:
     global _db_path
-    from bot.config import DATA_DIR
+    from bot.config import ALERTS_ENABLED, DATA_DIR, WATCHLIST_ENABLED
+
+    if not WATCHLIST_ENABLED and not ALERTS_ENABLED:
+        return
 
     data_dir = Path(DATA_DIR)
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -69,14 +72,21 @@ def init_storage() -> None:
     with _lock:
         conn = _connect()
         try:
-            conn.executescript(
-                """
+            if WATCHLIST_ENABLED:
+                conn.executescript(
+                    """
                 CREATE TABLE IF NOT EXISTS watchlist (
                     user_id INTEGER NOT NULL,
                     symbol TEXT NOT NULL,
                     created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
                     PRIMARY KEY (user_id, symbol)
                 );
+                """
+                )
+                _migrate_watchlist_to_user_id(conn)
+            if ALERTS_ENABLED:
+                conn.executescript(
+                    """
                 CREATE TABLE IF NOT EXISTS alerts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id INTEGER NOT NULL,
@@ -89,8 +99,7 @@ def init_storage() -> None:
                 CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON alerts(symbol);
                 CREATE INDEX IF NOT EXISTS idx_alerts_chat ON alerts(chat_id);
                 """
-            )
-            _migrate_watchlist_to_user_id(conn)
+                )
             conn.commit()
             logger.info(f"SQLite storage ready at {_db_path}")
         finally:

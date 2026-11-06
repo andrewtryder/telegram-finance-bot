@@ -9,7 +9,7 @@ from telegram import (
 from telegram.constants import ChatType
 from telegram.ext import Application, ContextTypes
 
-from bot.config import logger
+from bot.config import ALERTS_ENABLED, WATCHLIST_ENABLED, logger
 from bot.utils import DIVIDER
 
 
@@ -97,6 +97,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "<b>/watchlist</b> · <b>/watchlist add|remove &lt;ticker&gt;</b>\n"
             "Personal watchlist (max 10), shared across private chats, groups, and channels. "
             "Accepts stocks and crypto (e.g. <code>AAPL</code>, <code>BTC</code>, <code>BTC/USD</code>)."
+            + ("" if WATCHLIST_ENABLED else "\n\n<i>Currently disabled on this bot.</i>")
         )
     elif specific_command == "chart":
         return (
@@ -112,6 +113,7 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
             "into this chat and anyone here can list or remove them "
             "(unlike personal /watchlist). Stocks and crypto "
             "(e.g. <code>/alert add BTC above 100000</code>)."
+            + ("" if ALERTS_ENABLED else "\n\n<i>Currently disabled on this bot.</i>")
         )
 
     lines = [
@@ -124,9 +126,10 @@ def get_help_text(first_name: str = "there", specific_command: str = None) -> st
         "📰 <b>/stocknews &lt;ticker&gt;</b> - Latest news for a stock",
         "💰 <b>/marketcap &lt;ticker&gt;</b> - Market cap of a stock",
         "⚖️ <b>/compare &lt;t1&gt; &lt;t2&gt;</b> - Compare tickers",
-        "👀 <b>/watchlist</b> - Personal watchlist (shared across chats)",
+        "👀 <b>/watchlist</b> - Personal watchlist (shared across chats)"
+        + ("" if WATCHLIST_ENABLED else " — disabled"),
         "📈 <b>/chart &lt;ticker&gt;</b> - Price chart PNG",
-        "🔔 <b>/alert</b> - One-shot price alerts (chat-owned)",
+        "🔔 <b>/alert</b> - One-shot price alerts (chat-owned)" + ("" if ALERTS_ENABLED else " — disabled"),
         "",
         "🪙 <b>Crypto &amp; Markets</b>",
         "🪙 <b>/crypto &lt;symbol&gt;</b> - Current price of a cryptocurrency",

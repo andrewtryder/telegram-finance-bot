@@ -26,11 +26,15 @@ from bot.commands import (
     watchlist,
 )
 from bot.config import (
+    ALERTS_ENABLED,
+    BOT_MODE,
+    STORAGE_BACKEND,
     TELEGRAM_BOT_TOKEN,
     init_honeybadger,
     is_network_timeout,
     logger,
     notify_honeybadger,
+    validate_config,
 )
 from bot.jobs import check_price_alerts_job, log_metrics_job
 from bot.metrics import record_error, snapshot
@@ -79,13 +83,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(application) -> None:
+    webhook = await application.bot.get_webhook_info()
+    if webhook.url:
+        raise RuntimeError("Telegram webhook is active; remove it before starting polling")
     await setup_commands(application)
-    init_storage()
+    if STORAGE_BACKEND == "sqlite":
+        init_storage()
 
     if application.job_queue:
-        application.job_queue.run_repeating(check_price_alerts_job, interval=60, first=15)
+        if ALERTS_ENABLED:
+            application.job_queue.run_repeating(check_price_alerts_job, interval=60, first=15)
+            logger.info("Scheduled alert poller (60s).")
         application.job_queue.run_repeating(log_metrics_job, interval=900, first=60)
-        logger.info("Scheduled alert poller (60s) and metrics logger (15m).")
+        logger.info("Scheduled metrics logger (15m).")
     else:
         logger.warning("JobQueue unavailable; alerts and periodic metrics logging are disabled.")
 
@@ -95,19 +105,8 @@ async def post_shutdown(application) -> None:
     logger.info(f"metrics_snapshot_shutdown {data}")
 
 
-def main():
-    """Start the bot."""
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
-        return
-
-    init_honeybadger()
-
-    application = (
-        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
-    )
-
-    # Register command handlers
+def register_handlers(application):
+    """Register the same command and error handlers for any transport."""
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     application.add_handler(CommandHandler("stock", stock))
@@ -133,6 +132,23 @@ def main():
         MessageHandler(GROUP_PRIVACY_FILTER, _ignore_non_command_group_messages),
         group=1,
     )
+
+
+def main():
+    """Start the bot."""
+    validate_config()
+    if BOT_MODE != "polling":
+        raise RuntimeError("bot.main only supports polling mode")
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN is not set in the environment variables.")
+        return
+
+    init_honeybadger()
+
+    application = (
+        ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
+    )
+    register_handlers(application)
 
     logger.info("Starting bot... Waiting for commands.")
     application.run_polling(drop_pending_updates=True)

@@ -1,0 +1,12 @@
+{
+  "name": "telegram-finance-bot-webhook",
+  "main": "cloudflare/worker.py",
+  "compatibility_date": "2026-10-20",
+  "compatibility_flags": ["python_workers"],
+  "observability": { "enabled": true },
+  "vars": { "BOT_MODE": "webhook", "STORAGE_BACKEND": "none", "WATCHLIST_ENABLED": "false", "ALERTS_ENABLED": "false" },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["BotContainer"] },
+    { "tag": "v2", "deleted_classes": ["BotContainer"] }
+  ]
+}

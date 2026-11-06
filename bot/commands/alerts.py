@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from bot.config import logger
+from bot.config import ALERTS_ENABLED, logger
 from bot.storage import alert_add, alert_list, alert_remove
 from bot.symbols import resolve_market_symbol
 from bot.utils import DIVIDER, command_guard, send_action
@@ -16,6 +16,10 @@ async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
     if message is None:
         logger.warning("Ignoring /alert update without an effective message")
+        return
+
+    if not ALERTS_ENABLED:
+        await message.reply_text("Price alerts are disabled on this bot.")
         return
 
     command_text = message.text
