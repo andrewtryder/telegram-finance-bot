@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.6.2](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.6.1...telegram-finance-bot-v0.6.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **cloudflare:** unpack fetch options as keyword args and prevent 503 retry storm ([79afce6](https://github.com/andrewtryder/telegram-finance-bot/commit/79afce654dd72adcb1830cfe1c1796728ac3350a))
+* harden photo delivery fallback and fix market-session test assertions ([3118164](https://github.com/andrewtryder/telegram-finance-bot/commit/311816415f67e619735ca900f84deedea9479502))
+
 ## [0.6.1](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.6.0...telegram-finance-bot-v0.6.1) (2026-11-06)
 
 
