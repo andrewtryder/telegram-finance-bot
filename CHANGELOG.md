@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 This project uses [Release Please](https://github.com/googleapis/release-please) to automate version bumps, changelog updates, GitHub releases, and release tags from Conventional Commit messages.
 
+## [0.6.0](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.4...telegram-finance-bot-v0.6.0) (2026-11-06)
+
+
+### Features
+
+* simplify to stateless stock bot with extended-hours pricing ([943b9bc](https://github.com/andrewtryder/telegram-finance-bot/commit/943b9bc4d833771877c545032e97c0c34fe9bb97))
+
+
+### Bug Fixes
+
+* **ci:** pin setup-uv action version and configure codeql for python ([06a39ee](https://github.com/andrewtryder/telegram-finance-bot/commit/06a39eec8ed7021333cc5fcf9b67f3e18ad6fc55))
+* **ci:** use GITHUB_TOKEN in release-please to avoid expired secret error ([548d164](https://github.com/andrewtryder/telegram-finance-bot/commit/548d164869ed67232dcc88566337876595269c98))
+* **cloudflare:** add disable_python_external_sdk compatibility flag for deployment ([99ae8b1](https://github.com/andrewtryder/telegram-finance-bot/commit/99ae8b161003785826584f70ea2f308c26888d97))
+* enforce strict extended-hours freshness, concurrent webhooks, and worker stability ([85e3a4b](https://github.com/andrewtryder/telegram-finance-bot/commit/85e3a4bca63aa03adb15bfa33079d657252978d9))
+* sanitize tokens in timeout exceptions, remove pseudo-week range, and serialize concurrent duplicate webhooks ([9388dd4](https://github.com/andrewtryder/telegram-finance-bot/commit/9388dd4b7ae7af5a122966b74d586d3132f64fd9))
+
+
+### Code Refactoring
+
+* migrate to uv and implement python cloudflare worker ([7e8085d](https://github.com/andrewtryder/telegram-finance-bot/commit/7e8085d7ae08b302e5fca369f5a7083967596736))
+* migrate to uv and implement python cloudflare worker ([72446b8](https://github.com/andrewtryder/telegram-finance-bot/commit/72446b8203306c109363f220ac0f7f72a721a70c))
+
+
+### Documentation
+
+* add deployment modes and hosting migration guide ([ad992ae](https://github.com/andrewtryder/telegram-finance-bot/commit/ad992ae58b0b67f70a6300880a5fec097b16e82b))
+* add deployment modes and hosting migration guide ([79f591a](https://github.com/andrewtryder/telegram-finance-bot/commit/79f591af7cdc4bec32a859148fdfca47eaa7c20b))
+* add explicit license section and update CodeQL notes ([e735ddf](https://github.com/andrewtryder/telegram-finance-bot/commit/e735ddf23f47c032f16df36a2916c237b4cc2623))
+* address review comments on deployment guide ([dca7eb5](https://github.com/andrewtryder/telegram-finance-bot/commit/dca7eb581e0f25071a93a6646bfe6b07d6d68edd))
+* finalize deployment matrix, safe webhook switching, and D1 guide ([4e81fa6](https://github.com/andrewtryder/telegram-finance-bot/commit/4e81fa6a4f08c0640a91028113043666393169ad))
+
+
+### Tests
+
+* assert website label in stockinfo test without triggering CodeQL substring rule ([8b334e3](https://github.com/andrewtryder/telegram-finance-bot/commit/8b334e3ace4abf8d7206a53d5f3668e40801b7b3))
+* refine URL assertion in worker test to satisfy CodeQL scanner ([625765d](https://github.com/andrewtryder/telegram-finance-bot/commit/625765d2e4e92eca9752ffbe9acd281bb2c87c8d))
+
 ## [0.5.4](https://github.com/andrewtryder/telegram-finance-bot/compare/telegram-finance-bot-v0.5.3...telegram-finance-bot-v0.5.4) (2026-10-22)
 
 
